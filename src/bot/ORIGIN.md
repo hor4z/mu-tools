@@ -7,8 +7,8 @@ Cambios hechos acá respecto de la ref:
 
 | Archivo | Cambio |
 | --- | --- |
-| `core/state.ts` | `assist`: `pick` (Zen/joyas/excelentes) en vez de `sniper`/`gold`; `cast`, `alive`, `clientSkill`, `nativeCastAt`, `face`. Sin los tipos `Warp` y `StatusServer` (no viajan). |
-| `brain/assist.ts` | ataque por el cliente (`assist.cast`), solo monstruos vivos, skill elegido en la barra, levantar por clase, `pausedByUser`. |
+| `core/state.ts` | `assist`: `pick` (Zen/joyas/excelentes) en vez de `sniper`/`gold`; `cast`, `alive`, `clientSkill`, `nativeCastAt`, `face`, `roam`/`anchor`/`doing`, `pickup`, `picking`, `walk`, `stop`, `here`, `posOf` (posiciones del cliente: las del bot quedan atrasadas). Sin los tipos `Warp` y `StatusServer` (no viajan). |
+| `brain/assist.ts` | ataque por el cliente (`assist.cast`, que se acerca solo), objetivo en una zona alrededor de un ancla, levantar caminando y volver al ancla, solo monstruos vivos, skill elegido en la barra, levantar por clase, `pausedByUser`. |
 | `core/gamedata.ts`, `core/telemetry.ts` | importan `../../stubs/db` en vez de `@mubot/db`. |
 | `core/chat.ts`, `core/journal.ts` | importan `../../stubs/protocol` en vez de `@mubot/protocol`. |
 | `core/connection.ts` | solo comentarios (rutas). |

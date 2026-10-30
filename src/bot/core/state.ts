@@ -161,6 +161,32 @@ export const assist = {
   alive: null as null | ((targetId: number) => boolean),
   /** Gira al personaje de la página hacia la casilla del golpe cuando el paquete lo manda el asistente (la pone la extensión). */
   face: null as null | ((x: number, y: number) => void),
+  /**
+   * Cuánto se aleja a buscar monstruos y drops, en casillas desde el ancla (0: quieto, solo lo que está al alcance). El ancla es donde estaba al
+   * prender el auto attack, y se mueve con el personaje mientras jugás a mano: al soltar, caza alrededor de donde lo dejaste.
+   */
+  roam: 5,
+  anchor: null as null | { x: number; y: number },
+  /** Qué está haciendo, para el panel: '' (atacando o esperando), 'approach' (yendo al monstruo), 'pickup' (yendo al drop), 'return' (volviendo). */
+  doing: '' as '' | 'approach' | 'pickup' | 'return',
+  /** Pide al cliente que levante el drop caminando si hace falta (la pone la extensión). false si no pudo. */
+  pickup: null as null | ((dropId: number) => boolean),
+  /** true mientras el cliente va hacia el drop pedido; false cuando ya mandó el pedido (la pone la extensión). */
+  picking: null as null | (() => boolean),
+  /** Camina hasta la casilla con el pathfinding del cliente (la pone la extensión). */
+  walk: null as null | ((x: number, y: number) => boolean),
+  /** Cancela los pedidos del asistente al cliente (la pone la extensión). */
+  stop: null as null | (() => void),
+  /**
+   * Dónde está el personaje ahora para el cliente (la pone la extensión). `world.x/y` sale del paquete de caminar, que trae el camino entero:
+   * mientras camina dice el destino, no dónde está, y con eso el cerebro creía tener a tiro lo que no y cambiaba de objetivo de un lado al otro.
+   */
+  here: null as null | (() => { x: number; y: number } | null),
+  /**
+   * Dónde está un monstruo para el cliente (la pone la extensión). La lista del bot no sigue bien cómo caminan: medido, el objetivo pegado para
+   * el bot estaba a 5 casillas para el cliente, y el personaje caminaba mientras el cerebro creía tenerlo encima.
+   */
+  posOf: null as null | ((id: number) => { x: number; y: number } | null),
 };
 
 // Registro de exp por segundo (farming.ts, ExpLog): TODAS las mediciones de exp/min salen de acá.

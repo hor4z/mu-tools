@@ -1,10 +1,10 @@
-# Handoff: mutool (2026-10-30)
+# Handoff: mutool (2026-10-30, tarde)
 
 Estado para retomar. Lo estable (comandos, estructura, reglas) está en [AGENTS.md](AGENTS.md); acá va lo que está en curso.
 
 ## Dónde quedó
 
-- Repo: `hor4z/mu-tools` (público), clon en `~/self/mu-tools`. Versión **0.3.1**, commit `91883f3` en `main`.
+- Repo: `hor4z/mu-tools` (público), clon en `~/self/mu-tools`. Versión **0.4.2** (release `v0.4.2`).
 - El usuario carga la extensión desde `~/self/mu-tools/dist`. Se juega con **Capitan** en `https://mu.mormon.garden` (Slow).
 - Viene de `hor4z/mutbot` (`packages/extension`). En mutbot la copia vieja sigue en la rama `asistente-gira-al-objetivo`, **sin commitear**:
   falta decidir si se borra de mutbot (sacar `packages/extension` y `brain/assist.ts`, dejar una línea que apunte a mu-tools).
@@ -25,6 +25,25 @@ Estado para retomar. Lo estable (comandos, estructura, reglas) está en [AGENTS.
 6. **Sonido** (`src/ui/sound.ts`): antes se creaba un `AudioContext` por cada drop (zen incluido) y nunca se cerraba: pitido constante y probable
    causa de cuelgues. Ahora uno solo, suave, solo joyas y excelentes, apagado por defecto.
 7. Código reorganizado (`inject.ts` quedó en 20 líneas) y núcleo del bot reducido a lo que la extensión compila (`src/bot/ORIGIN.md`).
+
+## Qué se hizo a la tarde (0.3.2 → 0.4.2)
+
+1. **Va a buscar** (`src/bot/brain/assist.ts`): elige objetivo en una zona alrededor de un ancla (`assist.roam`: Quieto 0 / Cerca 5 / Lejos 9,
+   panel "Moverse") y le pide el skill al cliente; si está lejos, el cliente camina solo (`castApproach` del juego, confirmado en el bundle en vivo:
+   `boot-*.js`). Sin nada, levanta caminando (`world.pickupTarget`) y vuelve al ancla (`playerMoveTo`). Jugando a mano el ancla te sigue.
+2. **Posiciones del cliente** (`assist.here`, `assist.posOf`): `world.x/y` es el destino del paquete de caminar y las posiciones de monstruos del bot
+   quedaban hasta 5 casillas corridas. Con eso iba y venía. Medido antes/después: caminar con un monstruo a ≤2 casillas 119 → 7 muestras de 100 ms;
+   cambios de objetivo con el anterior vivo 12 → 1.
+3. **Alcance**: el cliente lanza hasta `distance + 0.5` (distancia real); el cerebro decide con `distance` (sin el +0.5) por la diferencia casilla/decimales.
+4. **Levantar**: si el cliente ya mandó el pedido (`assist.picking` false) y el drop sigue 600 ms después, el server no lo dio: se deja 30 s.
+5. **Apagar frena en el acto** (`stopNative`: caminar a la propia casilla, el cliente frena y avisa con su paquete) y el interruptor ignora doble click.
+6. Panel: no se sale de la pantalla con las novedades abiertas; cuenta solo monstruos vivos cerca.
+
+Sin probar en vivo: el freno al apagar (0.4.2) y una medición limpia en un spot lleno sin tocar nada (las de hoy fueron con el spot casi vacío o
+con el usuario jugando). Con un cartel del juego abierto (invitación a party) el cliente no lanza: no es del asistente.
+
+Código del cliente: `~/self/mulo` es una copia vieja (16/10); lo que corre en vivo se baja de `https://mu.mormon.garden/assets/boot-*.js`
+(ver `castApproach`, `pickupTarget`, `playerMoveTo`).
 
 ## Probado y sin probar
 

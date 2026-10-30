@@ -7,7 +7,7 @@
  * No hay proceso aparte, ni red local, ni base de datos.
  */
 import { onGameSocket, onGameSocketClosed, onPageSend, onServerFrame, setAssist, startAssistant, status } from './assistant';
-import { castNative, castOpts, captureGameWorld, debugWorld, faceTowards, isAlive } from './page/game-world';
+import { castNative, castOpts, captureGameWorld, debugWorld, faceTowards, isAlive, pickupNative, pickupPending, playerTile, stopNative, tileOf, walkNative } from './page/game-world';
 import { pressKey } from './page/input';
 import { hookGameSocket, writeToGame } from './page/socket';
 import { selectSkill, selectedSkillName } from './page/skills';
@@ -16,6 +16,7 @@ import { mountPanel } from './ui/panel';
 
 captureGameWorld();
 hookGameSocket({ opened: onGameSocket, closed: onGameSocketClosed, serverFrame: onServerFrame, pageSend: onPageSend });
-startAssistant({ write: writeToGame, press: pressKey, face: faceTowards, cast: castNative, alive: isAlive, selectedSkill: selectedSkillName });
+startAssistant({ write: writeToGame, press: pressKey, face: faceTowards, cast: castNative, alive: isAlive, pickup: pickupNative, picking: pickupPending, walk: walkNative, stop: stopNative, here: playerTile, posOf: tileOf,
+  selectedSkill: selectedSkillName });
 mountPanel({ status, setAssist, investStats, selectSkill });
 (window as unknown as { __muDebug?: unknown }).__muDebug = { opts: castOpts, world: debugWorld };
