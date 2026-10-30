@@ -33,6 +33,8 @@ export type Status = {
   mana: number; maxMana: number; monsters: number; skill: string; target: number; loot: ReturnType<Brain['lootHint']>;
   /** Los skills que conoce el personaje y el elegido en la barra del juego (0 si ninguno). */
   skills: SkillInfo[]; selectedSkill: number;
+  /** Hasta cuántas casillas se mueve a buscar (0: quieto) y qué está haciendo ahora. */
+  roam: number; doing: typeof assist.doing;
 };
 export type PickKind = keyof typeof assist.pick;
 
@@ -47,6 +49,18 @@ export type Io = {
   cast(targetId: number): boolean;
   /** Si el monstruo sigue vivo para el cliente. */
   alive(targetId: number): boolean;
+  /** Le pide al cliente que levante el drop (camina hasta él si hace falta). false si no pudo. */
+  pickup(dropId: number): boolean;
+  /** true mientras el cliente va hacia el drop pedido. */
+  picking(): boolean;
+  /** Camina hasta la casilla con el pathfinding del cliente. */
+  walk(x: number, y: number): boolean;
+  /** Cancela lo que el asistente le pidió al cliente. */
+  stop(): void;
+  /** La casilla donde está el personaje para el cliente, o null. */
+  here(): { x: number; y: number } | null;
+  /** La casilla donde está un monstruo para el cliente, o null. */
+  posOf(id: number): { x: number; y: number } | null;
   /** El nombre del skill elegido en la barra del juego, o null. */
   selectedSkill(): string | null;
 };
@@ -83,8 +97,8 @@ export function onPageSend(frame: Uint8Array): boolean {
       // El contador viene dentro del paquete: así sirve aunque el asistente se haya enganchado con el juego ya empezado.
       const [count, plain] = (pageDecryptor as unknown as { DecryptC3(d: Uint8Array): [number, Uint8Array] }).DecryptC3(Uint8Array.from(frame));
       // El latido del cliente (C3 0E, cada 5 s) no es una acción tuya: si pausara al asistente, lo frenaba la mitad del tiempo.
-      // Tampoco el skill que el asistente le pidió al cliente (assist.cast): sale por la página, pero no lo lanzaste vos.
-      const assistCast = (plain[2] === 0x1e || plain[2] === 0x19) && Date.now() - assist.nativeCastAt < NATIVE_CAST_WINDOW_MS;
+      // Tampoco el skill o el levantar que el asistente le pidió al cliente (assist.cast, assist.pickup): salen por la página, pero no son tuyos.
+      const assistCast = (plain[2] === 0x1e || plain[2] === 0x19 || plain[2] === 0x22) && Date.now() - assist.nativeCastAt < NATIVE_CAST_WINDOW_MS;
       if (plain[2] !== 0x0e && !assistCast) bot.lastManualActionAt = Date.now();
       if (!counterSynced) { syncGameCounter(count); counterSynced = true; }
       resendPageFrame(plain);
@@ -136,6 +150,8 @@ export function onGameSocketClosed() {
 /** Cada conexión empieza con todo apagado: lo que estaba prendido era para el personaje y el mundo de antes. */
 function turnEverythingOff() {
   assist.enabled = false;
+  assist.anchor = null;
+  assist.doing = '';
   assist.pick = { zen: false, jewels: false, excellent: false };
   bot.inGameAt = 0;
 }
@@ -193,6 +209,12 @@ export function startAssistant(deps: Io) {
   assist.face = (x, y) => io?.face(x, y);
   assist.cast = (id) => io?.cast(id) ?? false;
   assist.alive = (id) => io?.alive(id) ?? true;
+  assist.pickup = (id) => io?.pickup(id) ?? false;
+  assist.picking = () => io?.picking() ?? false;
+  assist.walk = (x, y) => io?.walk(x, y) ?? false;
+  assist.stop = () => io?.stop();
+  assist.here = () => io?.here() ?? null;
+  assist.posOf = (id) => io?.posOf(id) ?? null;
   setInterval(syncClientSkill, CLIENT_SKILL_SYNC_MS);
   (window as unknown as { __mu?: unknown }).__mu = { mods: HOST_MODS, swapBrain, state: { world, bot, assist }, status: () => status() };
   loadEmbeddedGameData();
@@ -229,11 +251,19 @@ function notReadyReason(): string | null {
 }
 
 /** Prende o apaga el auto attack o una clase de cosas para levantar. Devuelve el motivo si no se pudo. */
-export function setAssist(change: { attack?: boolean; pick?: PickKind }): string | null {
+export function setAssist(change: { attack?: boolean; pick?: PickKind; roam?: number }): string | null {
+  if (change.roam !== undefined) { assist.roam = change.roam; assist.anchor = assist.here?.() ?? { x: world.x, y: world.y }; assist.stop?.(); log(`Moverse: hasta ${change.roam} casillas.`); }
   const turningOn = change.attack === true || (change.pick !== undefined && !assist.pick[change.pick]);
   const reason = turningOn ? notReadyReason() : null;
   if (reason) return reason;
-  if (change.attack !== undefined) { assist.enabled = change.attack; log(`Auto attack ${assist.enabled ? 'prendido' : 'apagado'}.`); }
+  if (change.attack !== undefined) {
+    assist.enabled = change.attack;
+    // Caza alrededor de donde lo prendiste; al apagar se cancela lo que le había pedido al cliente (no sigue caminando hacia un monstruo).
+    assist.anchor = change.attack ? assist.here?.() ?? { x: world.x, y: world.y } : null;
+    assist.doing = '';
+    if (!change.attack) assist.stop?.();
+    log(`Auto attack ${assist.enabled ? 'prendido' : 'apagado'}.`);
+  }
   if (change.pick !== undefined) {
     assist.pick = { ...assist.pick, [change.pick]: !assist.pick[change.pick] };
     log(`Levantar ${change.pick}: ${assist.pick[change.pick] ? 'sí' : 'no'}.`);
@@ -244,7 +274,8 @@ export function setAssist(change: { attack?: boolean; pick?: PickKind }): string
 export function status(): Status {
   return {
     enabled: assist.enabled, pick: assist.pick, inGame: !!bot.inGameAt, ready: !notReadyReason(), paused: brain.pausedByUser?.() ?? false,
-    name: bot.charName, hp: world.hp, maxHp: world.maxHp, mana: world.mana, maxMana: world.maxMana, monsters: world.npcs.size,
+    name: bot.charName, hp: world.hp, maxHp: world.maxHp, mana: world.mana, maxMana: world.maxMana, monsters: brain.monstersNear?.() ?? world.npcs.size,
     skill: brain.skillName(), target: assist.target, loot: brain.lootHint(), skills: knownSkills(), selectedSkill: assist.clientSkill,
+    roam: assist.roam, doing: assist.doing,
   };
 }

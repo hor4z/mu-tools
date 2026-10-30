@@ -6,33 +6,42 @@
 import type { PickKind, Status } from '../assistant';
 import { EXT_BUILD, EXT_VERSION } from '../build-info';
 import { CHANGELOG } from '../changelog';
-import { readPoints } from '../page/stats';
+import { previewStats, readPoints } from '../page/stats';
 import { chime, unlockSound } from './sound';
 
 export type PanelDeps = {
   status(): Status;
   /** Devuelve el motivo si no se pudo. */
-  setAssist(change: { attack?: boolean; pick?: PickKind }): string | null;
-  investStats(): Promise<void>;
+  setAssist(change: { attack?: boolean; pick?: PickKind; roam?: number }): string | null;
+  /** Reparte los puntos libres; devuelve el motivo si no pudo. */
+  investStats(): Promise<string | null>;
   /** Elige un skill en la barra del juego. true si quedó elegido. */
   selectSkill(name: string): Promise<boolean>;
 };
 
 const PREFS_KEY = 'asistente-prefs';
-type Prefs = { x?: number; y?: number; collapsed?: boolean; sound?: boolean; seenVersion?: string };
+type Prefs = { x?: number; y?: number; collapsed?: boolean; sound?: boolean; seenVersion?: string; roam?: number };
 const PICKS: { kind: PickKind; label: string; hint: string }[] = [
-  { kind: 'zen', label: 'Zen', hint: 'Levanta el Zen que cae a 2 casillas' },
-  { kind: 'jewels', label: 'Joyas', hint: 'Joyas y plumas a 2 casillas (si hay lugar en la bolsa)' },
-  { kind: 'excellent', label: 'Excelentes', hint: 'Ítems excelentes a 2 casillas (si hay lugar en la bolsa)' },
+  { kind: 'zen', label: 'Zen', hint: 'Levanta el Zen: a 2 casillas, o en la zona de Moverse con el auto attack prendido' },
+  { kind: 'jewels', label: 'Joyas', hint: 'Joyas y plumas, como el Zen (si hay lugar en la bolsa)' },
+  { kind: 'excellent', label: 'Excelentes', hint: 'Ítems excelentes, como el Zen (si hay lugar en la bolsa)' },
+];
+/** Hasta dónde va a buscar monstruos y drops, en casillas desde donde lo prendiste. */
+const ROAMS: { roam: number; label: string; hint: string }[] = [
+  { roam: 0, label: 'Quieto', hint: 'No camina: ataca solo lo que tiene al alcance' },
+  { roam: 5, label: 'Cerca', hint: 'Va a buscar monstruos y drops hasta 5 casillas de donde lo prendiste, y vuelve' },
+  { roam: 9, label: 'Lejos', hint: 'Hasta 9 casillas de donde lo prendiste, y vuelve' },
 ];
 const REFRESH_MS = 300;
 const POINTS_REFRESH_MS = 1000;
 const ERROR_MS = 4000;
+const SWITCH_GUARD_MS = 400;
 
 const CSS = `
 :host { all: initial; }
 .box { position: fixed; z-index: 2147483647; width: 232px; font: 12px/1.35 system-ui, -apple-system, Segoe UI, sans-serif; color: #e9e4d8;
-  background: rgba(18, 16, 14, .94); border: 1px solid #6b5631; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.5); user-select: none; }
+  background: rgba(18, 16, 14, .94); border: 1px solid #6b5631; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.5); user-select: none;
+  display: flex; flex-direction: column; max-height: 100vh; box-sizing: border-box; }
 .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; cursor: move; border-bottom: 1px solid #3a3022; }
 .title { flex: 1; font-weight: 700; color: #f0c86a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex: none; }
@@ -41,7 +50,7 @@ const CSS = `
 .icon { all: unset; cursor: pointer; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: #bfb39a; font-size: 13px; }
 .icon:hover { background: #2c251b; color: #fff; }
 .icon.off { opacity: .45; }
-.body { padding: 9px 10px 10px; display: grid; gap: 9px; }
+.body { padding: 9px 10px 10px; display: grid; gap: 9px; overflow-y: auto; min-height: 0; }
 .collapsed .body { display: none; }
 .collapsed .head { border-bottom: 0; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -159,6 +168,18 @@ export function mountPanel(deps: PanelDeps) {
   }
   pickBox.append(el('div', 'section', 'Levantar'), chips);
 
+  const roamBox = el('div');
+  const roamChips = el('div', 'chips');
+  const roamEls = new Map<number, HTMLButtonElement>();
+  for (const r of ROAMS) {
+    const c = el('button', 'chip', r.label);
+    c.title = r.hint;
+    c.onclick = () => { prefs.roam = r.roam; savePrefs(prefs); act({ roam: r.roam }); };
+    roamEls.set(r.roam, c);
+    roamChips.append(c);
+  }
+  roamBox.append(el('div', 'section', 'Moverse'), roamChips);
+
   const statusLine = el('div', 'status');
   const lootLine = el('div', 'loot');
   const statsBtn = el('button', 'btn', 'Repartir puntos');
@@ -177,7 +198,7 @@ export function mountPanel(deps: PanelDeps) {
   const newBadge = el('span', 'new', 'nuevo');
   ver.append(newBadge);
   foot.append(ver, el('span'));
-  body.append(attackRow, skillBox, pickBox, statusLine, lootLine, statsBtn, news, foot);
+  body.append(attackRow, skillBox, roamBox, pickBox, statusLine, lootLine, statsBtn, news, foot);
   box.append(head, body);
   root.append(style, box);
 
@@ -185,19 +206,28 @@ export function mountPanel(deps: PanelDeps) {
   let error: { text: string; until: number } | null = null;
   let points = 0;
   let pointsAt = 0;
+  let plan: string | null = null;
   let lastAlertId = 0;
   let investing = false;
 
-  function act(change: { attack?: boolean; pick?: PickKind }) {
+  function act(change: { attack?: boolean; pick?: PickKind; roam?: number }) {
     const reason = deps.setAssist(change);
     error = reason ? { text: reason, until: Date.now() + ERROR_MS } : null;
     refresh();
   }
-  attackSwitch.onclick = () => act({ attack: !last?.enabled });
+  // Un doble click lo prendía y apagaba en el mismo instante (visto en vivo): el segundo click dentro de SWITCH_GUARD_MS no cuenta.
+  let switchedAt = 0;
+  attackSwitch.onclick = () => {
+    if (Date.now() - switchedAt < SWITCH_GUARD_MS) return;
+    switchedAt = Date.now();
+    act({ attack: !last?.enabled });
+  };
   statsBtn.onclick = () => {
     investing = true;
     refresh();
-    void deps.investStats().finally(() => { investing = false; pointsAt = 0; refresh(); });
+    void deps.investStats()
+      .then((reason) => { if (reason) error = { text: reason, until: Date.now() + ERROR_MS }; })
+      .finally(() => { investing = false; pointsAt = 0; refresh(); });
   };
 
   bell.onclick = () => {
@@ -206,16 +236,18 @@ export function mountPanel(deps: PanelDeps) {
     savePrefs(prefs);
     refresh();
   };
-  fold.onclick = () => { prefs.collapsed = !prefs.collapsed; savePrefs(prefs); refresh(); };
+  fold.onclick = () => { prefs.collapsed = !prefs.collapsed; savePrefs(prefs); refresh(); place(box.offsetLeft, box.offsetTop); };
   ver.onclick = () => {
     news.classList.toggle('open');
     if (prefs.seenVersion !== EXT_VERSION) { prefs.seenVersion = EXT_VERSION; savePrefs(prefs); refresh(); }
+    place(box.offsetLeft, box.offsetTop);
   };
 
-  // Arrastre desde el título; la posición se guarda y se recorta a la ventana.
+  // Arrastre desde el título; la posición se guarda y se recorta a la ventana. Si el panel crece (novedades abiertas), sube para no salirse por
+  // abajo: con el botón de la versión afuera no se podían cerrar.
   const place = (x: number, y: number) => {
     box.style.left = `${Math.max(0, Math.min(x, innerWidth - 80))}px`;
-    box.style.top = `${Math.max(0, Math.min(y, innerHeight - 30))}px`;
+    box.style.top = `${Math.max(0, Math.min(y, innerHeight - Math.max(30, box.offsetHeight)))}px`;
   };
   place(prefs.x ?? 12, prefs.y ?? 12);
   head.addEventListener('pointerdown', (e) => {
@@ -245,7 +277,10 @@ export function mountPanel(deps: PanelDeps) {
     if (s.enabled && chosen?.buff) return { text: `${chosen.name} no ataca: elegí un skill de ataque.`, cls: 'warn' };
     const hp = s.maxHp > 0 ? Math.round((s.hp / s.maxHp) * 100) : 0;
     const near = s.monsters === 1 ? '1 monstruo' : `${s.monsters} monstruos`;
-    if (s.enabled) return { text: s.target ? `Atacando · ${near} · vida ${hp}%` : `Sin nada al alcance · ${near}`, cls: '' };
+    if (s.enabled && s.doing === 'approach') return { text: `Yendo al monstruo · ${near} · vida ${hp}%`, cls: '' };
+    if (s.enabled && s.doing === 'pickup') return { text: 'Yendo a levantar…', cls: '' };
+    if (s.enabled && s.doing === 'return') return { text: 'Volviendo a donde lo prendiste', cls: '' };
+    if (s.enabled) return { text: s.target ? `Atacando · ${near} · vida ${hp}%` : `Sin nada ${s.roam ? 'en la zona' : 'al alcance'} · ${near}`, cls: '' };
     return { text: `${near} cerca · vida ${hp}%`, cls: '' };
   }
 
@@ -271,6 +306,7 @@ export function mountPanel(deps: PanelDeps) {
     renderSkills(s);
     skillBox.hidden = skillEls.size === 0;
     for (const [num, c] of skillEls) c.classList.toggle('on', num === s.selectedSkill);
+    for (const [roam, c] of roamEls) c.classList.toggle('on', roam === s.roam);
     for (const [kind, c] of chipEls) {
       c.classList.toggle('on', s.pick[kind]);
       c.disabled = !s.ready && !s.pick[kind];
@@ -286,11 +322,15 @@ export function mountPanel(deps: PanelDeps) {
       if (s.loot.kind !== 'zen' && s.loot.id !== lastAlertId) { lastAlertId = s.loot.id; if (prefs.sound) chime(); }
     }
 
-    setText(statsBtn, investing ? 'Repartiendo…' : points > 0 ? `Repartir ${points} puntos` : 'Repartir puntos');
+    if (points > 0 && now === pointsAt) plan = previewStats();
+    setText(statsBtn, investing ? 'Repartiendo…' : points > 0 ? `Repartir ${points}${plan ? `: ${plan}` : ' puntos'}` : 'Repartir puntos');
     statsBtn.disabled = investing || points <= 0;
-    statsBtn.title = points > 0 ? 'Energía hasta emparejar con fuerza, después mitad y mitad' : 'Abrí la ventana de personaje (C) para ver los puntos';
+    statsBtn.title = points > 0
+      ? `${plan ?? ''}\nCada punto al stat que más sube el daño por segundo del giro: agilidad (velocidad, hasta 508), fuerza o energía. Sin vitalidad.`
+      : 'Abrí la ventana de personaje (C) para ver los puntos';
   }
 
+  if (prefs.roam !== undefined) deps.setAssist({ roam: prefs.roam });
   const attach = () => { document.documentElement.appendChild(host); refresh(); setInterval(refresh, REFRESH_MS); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach, { once: true });
   else attach();

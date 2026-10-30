@@ -12,6 +12,8 @@
  */
 type Entity = {
   dying?: boolean;
+  netId?: number;
+  playerMoveTo?: { point: { x: number; y: number }; handled: boolean; sendToServer: boolean };
   transform?: { pos: { x: number; z: number }; rot: { y: number } };
   movement?: { velocity?: { x: number; y: number } };
 };
@@ -19,7 +21,9 @@ type GameWorld = {
   netObjsQuery: unknown;
   playerEntity?: Entity;
   getByNetId(id: number): Entity | undefined;
-  castRequest: unknown;
+  castRequest: { target?: Entity } | null;
+  castApproach: unknown;
+  pickupTarget: Entity | null;
 };
 
 let gameWorld: GameWorld | null = null;
@@ -41,17 +45,90 @@ export const debugWorld = () => gameWorld;
 
 const clientReady = (w: GameWorld | null): w is GameWorld => castOpts.native && !!w?.playerEntity;
 
+/** Los pedidos que hizo el asistente (no los del usuario): solo esos se reemplazan o se cancelan. */
+let ownCast: GameWorld['castRequest'] = null;
+let ownPickup: Entity | null = null;
+/** Adónde mandó a caminar el asistente (volver al ancla). Si el destino del cliente cambió, la caminata ya es tuya y no se frena. */
+let ownWalk: { x: number; y: number } | null = null;
+
 /**
  * Pide al cliente el skill elegido contra el monstruo, como con el click apretado. false solo si no hay mundo del cliente: entonces el asistente
  * manda el paquete. Con el cliente disponible nunca hay que caer al paquete (sale sin animación, hacia donde estaba el monstruo): un monstruo que
  * ya no está o se está muriendo simplemente no se pide.
+ * Si el monstruo está fuera de alcance, el cliente camina hasta tenerlo a tiro (su `castApproach`, con su pathfinding) y recién ahí lanza. Un
+ * pedido propio a otro monstruo, o a uno que se está muriendo, se reemplaza: si no, seguía caminando hacia el que ya no vale.
  */
 export function castNative(targetId: number): boolean {
   const w = gameWorld;
   if (!clientReady(w)) return false;
   const t = w.getByNetId(targetId);
-  if (t?.transform && !t.dying && !w.castRequest) w.castRequest = { target: t, point: { x: t.transform.pos.x, y: t.transform.pos.z } };
+  if (!t?.transform || t.dying) return true;
+  const req = w.castRequest;
+  if (req && (req !== ownCast || req.target === t)) return true;
+  w.castRequest = ownCast = { target: t, point: { x: t.transform.pos.x, y: t.transform.pos.z } } as GameWorld['castRequest'];
   return true;
+}
+
+/** Pide al cliente que levante el drop, como un click en su nombre: camina hasta él si hace falta. false si no hay mundo del cliente o drop. */
+export function pickupNative(dropId: number): boolean {
+  const w = gameWorld;
+  if (!clientReady(w)) return false;
+  const d = w.getByNetId(dropId);
+  if (!d?.transform) return false;
+  // Aunque el cliente ya fuera hacia ese drop (lo clickeaste vos): queda como pedido del asistente, si no se tomaba como ya mandado.
+  w.pickupTarget = ownPickup = d;
+  return true;
+}
+
+/** true mientras el cliente todavía va hacia el drop que le pidió el asistente: al llegar manda el pedido y suelta su `pickupTarget`. */
+export function pickupPending(): boolean {
+  return !!ownPickup && gameWorld?.pickupTarget === ownPickup;
+}
+
+/** Camina hasta la casilla con el pathfinding del cliente, como un click en el piso. */
+export function walkNative(x: number, y: number): boolean {
+  const w = gameWorld;
+  const mv = w?.playerEntity?.playerMoveTo;
+  if (!clientReady(w) || !mv) return false;
+  mv.point.x = x + 0.5;
+  mv.point.y = y + 0.5;
+  mv.handled = false;
+  mv.sendToServer = true;
+  ownWalk = { x: mv.point.x, y: mv.point.y };
+  return true;
+}
+
+/**
+ * Al apagar: cancela lo que pidió el asistente (ataque, acercarse, levantar) y frena en el acto. Para frenar se le pide al cliente caminar a la
+ * casilla donde está, como un click al lado tuyo: frena con su propia lógica y avisa al server con su paquete, así las posiciones no quedan
+ * distintas. Antes terminaba el camino que había empezado (varias casillas) y parecía que seguía prendido.
+ */
+export function stopNative() {
+  const w = gameWorld;
+  let had = false;
+  if (w && ownCast && w.castRequest === ownCast) { w.castRequest = null; w.castApproach = null; had = true; }
+  if (w && ownPickup && w.pickupTarget === ownPickup) { w.pickupTarget = null; had = true; }
+  ownCast = null;
+  ownPickup = null;
+  const p = w?.playerEntity;
+  const v = p?.movement?.velocity;
+  const mv = p?.playerMoveTo;
+  const walkIsOurs = !!ownWalk && !!mv && mv.point.x === ownWalk.x && mv.point.y === ownWalk.y;
+  const here = playerTile();
+  if (here && (had || walkIsOurs) && v && (v.x !== 0 || v.y !== 0)) walkNative(here.x, here.y);
+  ownWalk = null;
+}
+
+/** Dónde está un monstruo (u otro objeto) para el cliente (la casilla), o null si el cliente no lo tiene. */
+export function tileOf(netId: number): { x: number; y: number } | null {
+  const t = gameWorld?.getByNetId(netId)?.transform;
+  return t ? { x: Math.floor(t.pos.x), y: Math.floor(t.pos.z) } : null;
+}
+
+/** Dónde está el personaje para el cliente (la casilla), o null. */
+export function playerTile(): { x: number; y: number } | null {
+  const t = gameWorld?.playerEntity?.transform;
+  return t ? { x: Math.floor(t.pos.x), y: Math.floor(t.pos.z) } : null;
 }
 
 /**
