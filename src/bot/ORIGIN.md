@@ -12,6 +12,7 @@ Cambios hechos acá respecto de la ref:
 | `core/gamedata.ts`, `core/telemetry.ts` | importan `../../stubs/db` en vez de `@mubot/db`. |
 | `core/chat.ts`, `core/journal.ts` | importan `../../stubs/protocol` en vez de `@mubot/protocol`. |
 | `core/connection.ts` | solo comentarios (rutas). |
+| `core/health.ts`, `core/world.ts` | `maxFor` usa la mayor vida vista solo cerca del tope de 16 bits; `world.maxHp` sale del máximo informado (`setReportedMaxHp`): un buff de vida dejaba el máximo inflado para siempre. |
 
 No se tocan a mano:
 
