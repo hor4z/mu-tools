@@ -50,9 +50,12 @@ export class HpTracker {
     return real;
   }
 
-  /** Máximo a usar para el porcentaje: el informado o, si la vida real ya lo pasó, la mayor vista. */
+  /**
+   * Máximo a usar para el porcentaje: el informado o, cerca del tope de 16 bits (donde el informado puede quedar corto), la mayor vista. Lejos del
+   * tope no: un buff de vida (Swell Life) sube la vida un rato y la mayor vista quedaba como máximo para siempre.
+   */
   maxFor(reportedMax: number): number {
-    return Math.max(reportedMax, this.maxSeen);
+    return reportedMax >= HP_NEAR_CAP ? Math.max(reportedMax, this.maxSeen) : reportedMax;
   }
 
   reset() {

@@ -157,6 +157,11 @@ export const assist = {
   clientSkill: 0,
   /** Cuándo se pidió el último `cast`: su paquete sale por la página y no tiene que contar como jugada a mano. */
   nativeCastAt: 0,
+  /**
+   * Cuándo el asistente apretó una tecla (pociones): el paquete de usar el ítem sale por la página y tampoco es tuyo. Antes contaba como jugada a
+   * mano y cada poción lo ponía 2,5 s en pausa.
+   */
+  ownKeyAt: 0,
   /** Si el monstruo sigue vivo en el cliente de la página (la pone la extensión): la lista propia guarda los muertos hasta que salen de la vista. */
   alive: null as null | ((targetId: number) => boolean),
   /** Gira al personaje de la página hacia la casilla del golpe cuando el paquete lo manda el asistente (la pone la extensión). */

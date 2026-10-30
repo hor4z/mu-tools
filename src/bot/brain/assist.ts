@@ -23,13 +23,26 @@ const MANA_LOW_PCT = 40;
 const POTION_GAP_MS = 1500;
 let lastHealAt = 0;
 let lastManaAt = 0;
+/**
+ * Seguro: si tres pociones de vida seguidas no subieron la vida, el porcentaje está mal leído (pasó con un máximo viejo de Swell Life): deja de
+ * tomar un rato en vez de vaciar el inventario.
+ */
+const USELESS_HEALS = 3;
+const HEAL_BACKOFF_MS = 30_000;
+let heals = { count: 0, hpAt: 0, until: 0 };
 
 /** Toma la poción de vida o de maná con el atajo si hace falta. true si apretó una tecla. */
 function drinkIfNeeded(): boolean {
   if (!assist.press) return false;
   const now = Date.now();
-  if (world.maxHp > 0 && (world.hp / world.maxHp) * 100 <= HEAL_AT_PCT && now - lastHealAt >= POTION_GAP_MS) {
+  if (world.maxHp > 0 && (world.hp / world.maxHp) * 100 <= HEAL_AT_PCT && now - lastHealAt >= POTION_GAP_MS && now >= heals.until) {
     lastHealAt = now;
+    heals = world.hp > heals.hpAt || !heals.count ? { count: 1, hpAt: world.hp, until: 0 } : { ...heals, count: heals.count + 1 };
+    if (heals.count > USELESS_HEALS) {
+      log(`Asistente: ${USELESS_HEALS} pociones no subieron la vida (${world.hp}/${world.maxHp}); dejo de tomar ${HEAL_BACKOFF_MS / 1000} s.`);
+      heals = { count: 0, hpAt: 0, until: now + HEAL_BACKOFF_MS };
+      return false;
+    }
     log(`Asistente: vida ${world.hp}/${world.maxHp}, aprieto ${HEAL_KEY.toUpperCase()}.`);
     assist.press(HEAL_KEY);
     return true;
@@ -43,11 +56,9 @@ function drinkIfNeeded(): boolean {
   return false;
 }
 
-// Si el usuario mandó algo a mano hace menos de esto, el asistente no ataca ni pide ítems: evita que su C3/C4
-// y el del usuario compartan el contador de cifrado al mismo tiempo (eso desincronizaba el descifrado de la
-// página y terminaba descartando los clicks del usuario en silencio). Las pociones por atajo (drinkIfNeeded)
-// no cuentan: van por teclado, no por C3, así que no compiten por el contador.
-const MANUAL_PAUSE_MS = 2500;
+// El automático no se pausa solo cuando jugás a mano: lo prendés y lo apagás vos con el interruptor (pedido del usuario, 2026-10-30). La pausa
+// automática se activaba con paquetes que no eran tuyos (las pociones del propio asistente) y lo dejaba casi siempre quieto. Detectarlo bien
+// queda para más adelante (issue en hor4z/mu-tools). Ya no hace falta por el cifrado: todo sale por un único contador (assistant.ts).
 
 // --- Auto attack ------------------------------------------------------------------------------------------------------------------------------
 /** Ritmo del skill del asistente: el mismo que manda el cliente del usuario con el click apretado (medido: un Giro cada 500 ms, 223 envíos). */
@@ -200,8 +211,6 @@ async function assistLoop() {
     if (!attacked) await sleep(150);
     attacked = false;
     if (!assist.enabled || !bot.inGameAt || bot.kicked || world.hp <= 0) { assist.doing = ''; continue; }
-    // Jugando a mano el ancla te sigue: al soltar, caza alrededor de donde lo dejaste.
-    if (Date.now() - bot.lastManualActionAt < MANUAL_PAUSE_MS) { assist.anchor = me(); assist.doing = ''; continue; }
     if (drinkIfNeeded()) await sleep(150);
     const skill = attackSkill();
     // El cliente lanza el skill elegido en su barra (assist.clientSkill); sin eso, el paquete lo manda el asistente.
@@ -296,7 +305,6 @@ async function pickLoop() {
     await sleep(100);
     const { zen, jewels, excellent } = assist.pick;
     if (!(zen || jewels || excellent) || !bot.inGameAt || bot.kicked || world.hp <= 0) continue;
-    if (Date.now() - bot.lastManualActionAt < MANUAL_PAUSE_MS) continue;
     // Mientras va a levantar caminando (pickupOnTheWay) no se pide nada más. Si no, lo que está a PICK_REACH se pide también atacando: en un
     // spot lleno nunca queda un momento sin monstruos y pickupOnTheWay no corre.
     if (assist.doing === 'pickup') continue;
@@ -324,8 +332,8 @@ export function lootHint() {
   return { id: t.id, name: t.kind === 'zen' ? 'Zen' : itemInfo(t.group, t.num).name, kind: t.kind, dist: t.d, dir };
 }
 
-/** El asistente está esperando porque el usuario jugó a mano hace un momento. */
-export const pausedByUser = () => Date.now() - bot.lastManualActionAt < MANUAL_PAUSE_MS;
+/** Ya no se pausa solo (ver el comentario antes de "Auto attack"): el panel lo sigue preguntando. */
+export const pausedByUser = () => false;
 
 export function skillName(): string {
   const s = attackSkill();

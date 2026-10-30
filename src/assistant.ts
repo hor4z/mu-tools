@@ -14,7 +14,7 @@ import { createPacketReader } from './bot/net/socket';
 import { XOR32_KEY_097D, attachFakeGameSocket, detachFakeGameSocket, resendPageFrame, syncGameCounter } from './bot/core/connection';
 import { trackPanelPackets } from './bot/core/events';
 import { assist, bot, world } from './bot/core/state';
-import { onMapArrival, parseCharacterInformation097, parseCharacterList097, trackWorld, watchMoney } from './bot/core/world';
+import { onMapArrival, parseCharacterInformation097, parseCharacterList097, setReportedMaxHp, trackWorld, watchMoney } from './bot/core/world';
 import { watchChat } from './bot/core/chat';
 import { DIR_DELTA, log, sleep } from './bot/core/util';
 import { skills as gameSkills } from './bot/core/gamedata';
@@ -89,6 +89,8 @@ let counterSynced = false;
 
 /** Hasta cuánto después de pedirle un skill al cliente su paquete se toma como del asistente y no como tuyo. */
 const NATIVE_CAST_WINDOW_MS = 1500;
+/** Después de una tecla del asistente (poción), lo que mande la página en este tiempo es suyo: el paquete sale en el mismo instante. */
+const OWN_KEY_WINDOW_MS = 800;
 
 /** Un frame que la página va a mandar al servidor. true: ya salió por acá (con el contador compartido), el gancho no debe mandarlo. */
 export function onPageSend(frame: Uint8Array): boolean {
@@ -98,7 +100,8 @@ export function onPageSend(frame: Uint8Array): boolean {
       const [count, plain] = (pageDecryptor as unknown as { DecryptC3(d: Uint8Array): [number, Uint8Array] }).DecryptC3(Uint8Array.from(frame));
       // El latido del cliente (C3 0E, cada 5 s) no es una acción tuya: si pausara al asistente, lo frenaba la mitad del tiempo.
       // Tampoco el skill o el levantar que el asistente le pidió al cliente (assist.cast, assist.pickup): salen por la página, pero no son tuyos.
-      const assistCast = (plain[2] === 0x1e || plain[2] === 0x19 || plain[2] === 0x22) && Date.now() - assist.nativeCastAt < NATIVE_CAST_WINDOW_MS;
+      const assistCast = ((plain[2] === 0x1e || plain[2] === 0x19 || plain[2] === 0x22) && Date.now() - assist.nativeCastAt < NATIVE_CAST_WINDOW_MS)
+        || Date.now() - assist.ownKeyAt < OWN_KEY_WINDOW_MS;
       if (plain[2] !== 0x0e && !assistCast) bot.lastManualActionAt = Date.now();
       if (!counterSynced) { syncGameCounter(count); counterSynced = true; }
       resendPageFrame(plain);
@@ -164,6 +167,7 @@ function applyCharacterInfo(raw: any) {
     level: mine?.Level ?? world.level, classId: mine?.ClassId ?? null, levelUpPoints: info.levelUpPoints, exp: info.exp, expForNext: info.expForNext,
     stats: { str: info.str, agi: info.agi, vit: info.vit, ene: info.ene },
   });
+  setReportedMaxHp(info.maxHp);
   bot.lastMoney = info.money;
   bot.inGameAt = Date.now();
   bot.kicked = false;
@@ -205,7 +209,7 @@ export function startAssistant(deps: Io) {
   io = deps;
   if (started) return;
   started = true;
-  assist.press = (key) => io?.press(key);
+  assist.press = (key) => { assist.ownKeyAt = Date.now(); io?.press(key); };
   assist.face = (x, y) => io?.face(x, y);
   assist.cast = (id) => io?.cast(id) ?? false;
   assist.alive = (id) => io?.alive(id) ?? true;
