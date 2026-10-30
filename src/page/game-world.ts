@@ -48,8 +48,8 @@ const clientReady = (w: GameWorld | null): w is GameWorld => castOpts.native && 
 /** Los pedidos que hizo el asistente (no los del usuario): solo esos se reemplazan o se cancelan. */
 let ownCast: GameWorld['castRequest'] = null;
 let ownPickup: Entity | null = null;
-/** El asistente mandó a caminar (volver al ancla): al apagar también se frena. */
-let ownWalk = false;
+/** Adónde mandó a caminar el asistente (volver al ancla). Si el destino del cliente cambió, la caminata ya es tuya y no se frena. */
+let ownWalk: { x: number; y: number } | null = null;
 
 /**
  * Pide al cliente el skill elegido contra el monstruo, como con el click apretado. false solo si no hay mundo del cliente: entonces el asistente
@@ -75,7 +75,8 @@ export function pickupNative(dropId: number): boolean {
   if (!clientReady(w)) return false;
   const d = w.getByNetId(dropId);
   if (!d?.transform) return false;
-  if (w.pickupTarget !== d) w.pickupTarget = ownPickup = d;
+  // Aunque el cliente ya fuera hacia ese drop (lo clickeaste vos): queda como pedido del asistente, si no se tomaba como ya mandado.
+  w.pickupTarget = ownPickup = d;
   return true;
 }
 
@@ -93,7 +94,7 @@ export function walkNative(x: number, y: number): boolean {
   mv.point.y = y + 0.5;
   mv.handled = false;
   mv.sendToServer = true;
-  ownWalk = true;
+  ownWalk = { x: mv.point.x, y: mv.point.y };
   return true;
 }
 
@@ -109,10 +110,13 @@ export function stopNative() {
   if (w && ownPickup && w.pickupTarget === ownPickup) { w.pickupTarget = null; had = true; }
   ownCast = null;
   ownPickup = null;
-  const v = w?.playerEntity?.movement?.velocity;
+  const p = w?.playerEntity;
+  const v = p?.movement?.velocity;
+  const mv = p?.playerMoveTo;
+  const walkIsOurs = !!ownWalk && !!mv && mv.point.x === ownWalk.x && mv.point.y === ownWalk.y;
   const here = playerTile();
-  if (here && (had || ownWalk) && v && (v.x !== 0 || v.y !== 0)) walkNative(here.x, here.y);
-  ownWalk = false;
+  if (here && (had || walkIsOurs) && v && (v.x !== 0 || v.y !== 0)) walkNative(here.x, here.y);
+  ownWalk = null;
 }
 
 /** Dónde está un monstruo (u otro objeto) para el cliente (la casilla), o null si el cliente no lo tiene. */

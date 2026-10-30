@@ -103,19 +103,21 @@ const skipUntil = new Map<number, number>();
 let chosen = { id: 0, since: 0 };
 let idleSince = 0;
 let lastReturnAt = 0;
+/** Hay un pedido de acercarse a un monstruo en curso: si el objetivo se va de la zona o se saltea, se cancela (si no, el cliente lo sigue). */
+let approaching = false;
 /** El maná de la vuelta anterior: si bajó, el cliente lanzó (le está pegando al objetivo aunque esté en el borde del alcance). */
 let lastMana = 0;
 
 /**
  * Si el monstruo está a tiro. Con el cliente lanzando manda su regla (skillCasting del juego): distancia real hasta `distance + 0.5` del skill,
  * o 1.8 sin distancia. Antes se usaba el alcance del bot (1 para Twisting Slash): caminaba hacia monstruos que ya tenía a tiro, y a los 4 s los
- * salteaba como inalcanzables mientras les pegaba. Acá sin el +0.5: el cliente mide desde la posición con decimales y el cerebro desde la
+ * salteaba como inalcanzables mientras les pegaba. Acá sin el +0.5 (sin distancia, 1.5 en vez de 1.8): el cliente mide desde la posición con decimales y el cerebro desde la
  * casilla, y en el borde el cerebro lo daba a tiro mientras el cliente caminaba (medido: 12 s de 32 caminando con un monstruo a 2,5).
  */
 function reachTest(skill: ReturnType<typeof attackSkill>, native: boolean, at: { x: number; y: number }): (n: Npc) => boolean {
   if (native && skill) {
     const dist = SKILL_TABLE.get(skill.number)?.distance ?? 0;
-    const r = dist > 0 ? dist : 1.4;
+    const r = dist > 0 ? dist : 1.5; // 1.5: el pegado en diagonal (1.41) cuenta; el cliente llega hasta 1.8
     return (n) => Math.hypot(n.x - at.x, n.y - at.y) <= r;
   }
   const reach = skill ? castReach(skill.number) : 1;
@@ -181,9 +183,11 @@ async function pickupOnTheWay(at: { x: number; y: number }, inReach: (n: Npc) =>
       break;
     }
     // Si mientras va llega un monstruo a tiro, primero el monstruo: el drop se vuelve a pedir después.
-    inReach = reachTest(attackSkill(), !!assist.cast && assist.clientSkill > 0, me());
+    inReach = reachTest(attackSkill(), !!assist.cast && assist.clientSkill > 0 && !!assist.here?.(), me());
     if (threat()) { assist.stop?.(); askedAt.delete(t.id); break; }
   }
+  // Se pasó el tiempo: que el cliente no siga yendo al drop mientras el cerebro hace otra cosa.
+  if (drops.has(t.id)) assist.stop?.();
   assist.doing = '';
   return true;
 }
@@ -201,7 +205,8 @@ async function assistLoop() {
     if (drinkIfNeeded()) await sleep(150);
     const skill = attackSkill();
     // El cliente lanza el skill elegido en su barra (assist.clientSkill); sin eso, el paquete lo manda el asistente.
-    const native = !!assist.cast && assist.clientSkill > 0;
+    // Con el mundo del cliente (here no es null): sin él, el paquete del asistente no camina y no hay que elegir monstruos lejos.
+    const native = !!assist.cast && assist.clientSkill > 0 && !!assist.here?.();
     const at = me();
     const inReach = reachTest(skill, native, at);
     // Ir a buscar solo con el cliente lanzando: un paquete del asistente a un monstruo lejos no camina, solo erraría.
@@ -211,6 +216,7 @@ async function assistLoop() {
     if (!best) {
       assist.target = 0;
       chosen = { id: 0, since: 0 };
+      if (approaching) { assist.stop?.(); approaching = false; }
       if (await pickupOnTheWay(at, inReach, roam)) { idleSince = 0; continue; }
       const a = assist.anchor;
       if (!idleSince) idleSince = now;
@@ -235,6 +241,7 @@ async function assistLoop() {
       // El cliente lo lanza como con el click apretado (gira, anima y espera su propio tiempo entre skills), o camina hasta tenerlo a tiro: el
       // pedido se repone apenas lo usa. Esperar acá el ritmo del asistente dejaba huecos entre un Giro y el siguiente.
       assist.doing = atHand ? '' : 'approach';
+      approaching = !atHand;
       assist.nativeCastAt = now;
       await sleep(NATIVE_CAST_POLL_MS);
       attacked = true;
@@ -272,12 +279,12 @@ const refusedUntil = new Map<number, number>();
 function nearestWanted(ready = false) {
   let best: { id: number; x: number; y: number; group: number; num: number; kind: PickKind; d: number } | null = null;
   const now = Date.now();
+  const p = me();
   for (const dr of drops.values()) {
     const kind = pickKind(dr);
     if (!kind || !assist.pick[kind]) continue;
     if (now < (refusedUntil.get(dr.id) ?? 0)) continue;
     if (ready && now - (askedAt.get(dr.id) ?? 0) < PICKUP_WAIT_MS * 2) continue;
-    const p = me();
     const d = chebyshev(p.x, p.y, dr.x, dr.y);
     if (!best || d < best.d) best = { id: dr.id, x: dr.x, y: dr.y, group: dr.group, num: dr.num, kind, d };
   }
@@ -290,8 +297,9 @@ async function pickLoop() {
     const { zen, jewels, excellent } = assist.pick;
     if (!(zen || jewels || excellent) || !bot.inGameAt || bot.kicked || world.hp <= 0) continue;
     if (Date.now() - bot.lastManualActionAt < MANUAL_PAUSE_MS) continue;
-    // Con el auto attack prendido levanta el cerebro de ataque, caminando entre un monstruo y el siguiente (pickupOnTheWay).
-    if (assist.enabled && assist.pickup) continue;
+    // Mientras va a levantar caminando (pickupOnTheWay) no se pide nada más. Si no, lo que está a PICK_REACH se pide también atacando: en un
+    // spot lleno nunca queda un momento sin monstruos y pickupOnTheWay no corre.
+    if (assist.doing === 'pickup') continue;
     const t = nearestWanted();
     if (!t || t.d > PICK_REACH || (t.kind !== 'zen' && bagRoom() <= 0)) continue;
     const now = Date.now();

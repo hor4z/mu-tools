@@ -41,8 +41,8 @@ function readAttackSpeed(): number | null {
 /** Puntos libres, leídos de la ventana de personaje (0 si está cerrada). */
 export function readPoints(): number {
   const el = Array.from(document.querySelectorAll('.v097d-window.v097d-character *'))
-    .find((e) => e.children.length === 0 && /^Point:\s*\d+/.test(e.textContent ?? ''));
-  return Number(/Point:\s*(\d+)/.exec(el?.textContent ?? '')?.[1] ?? 0);
+    .find((e) => e.children.length === 0 && /^(Points?|Puntos?):\s*\d+/i.test(e.textContent ?? ''));
+  return Number(/:\s*(\d+)/.exec(el?.textContent ?? '')?.[1] ?? 0);
 }
 
 /** Un stat hasta sumar `n` puntos: de a 100 (cmd), 10 (shift) y 1 (solo), con una pausa chica entre cada click. */
@@ -76,7 +76,7 @@ const STR_ENE_GAP = 2000;
  *  - Vitalidad: nada (pedido del usuario, 2026-10-30: los monstruos no le hacen daño).
  * Lógica pura: entra lo que muestra la ventana, sale cuánto a cada stat.
  */
-export function planStats(points: number, cur: { str: number; agi: number; ene: number; speed: number }): StatPlan {
+export function planStats(points: number, cur: { str: number; ene: number; speed: number }): StatPlan {
   const plan: StatPlan = { str: 0, agi: 0, ene: 0 };
   let { str, ene } = cur;
   let agiSince = 0;
@@ -100,7 +100,7 @@ function currentPlan(): { plan: StatPlan; rows: StatRow[] } | string {
   if (points <= 0) return 'No hay puntos para repartir (abrí la ventana de personaje con C).';
   if (!str || !agi || !ene) return 'No encuentro fuerza, agilidad y energía en la ventana de personaje.';
   const speed = readAttackSpeed() ?? Math.floor(agi.value / AGI_PER_AS);
-  return { plan: planStats(points, { str: str.value, agi: agi.value, ene: ene.value, speed }), rows };
+  return { plan: planStats(points, { str: str.value, ene: ene.value, speed }), rows };
 }
 
 /** Cómo se repartirían los puntos ahora ("+120 Agi · +100 Fue · +70 Ene"), para el panel; null si no hay nada que repartir. */

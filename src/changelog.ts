@@ -10,6 +10,8 @@ export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
       'Al apagar el auto attack frena en el acto: antes terminaba el camino que había empezado y parecía que seguía prendido.',
       'Un doble click en el interruptor ya no lo prende y apaga a la vez.',
       'Repartir puntos anda de nuevo con el juego en castellano ("Fue" en vez de "Str"); si no puede, dice por qué.',
+      'Atacando en un spot lleno vuelve a levantar lo que cae a 2 casillas (antes solo levantaba cuando no quedaba ningún monstruo).',
+      'Si el objetivo se va de la zona, deja de seguirlo; si no llega a un drop a tiempo, deja de ir.',
       'Reparto más inteligente: cada punto va a lo que más sube el daño por segundo del giro (agilidad hasta 508 de velocidad, fuerza o energía), sin vitalidad. El botón muestra el plan antes de repartir.',
     ],
   },
