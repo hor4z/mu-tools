@@ -195,6 +195,15 @@ export function onMapArrival() {
 // ---------------------------------------------------------------------------
 // Vida de 16 bits que se da vuelta (health.ts): world.hp/maxHp quedan con la vida real estimada.
 const hpTracker = new HpTracker();
+/**
+ * El máximo de vida que informó el server (al entrar, al subir de nivel). `world.maxHp` sale de acá y no de sí mismo: antes se recalculaba con
+ * la mayor vida vista, y después de Swell Life (4026 con un máximo de 1344) quedaba 4026 para siempre: el asistente creía estar al 33 %,
+ * tomaba una poción cada 2,5 s y no atacaba.
+ */
+let reportedMaxHp = 0;
+export function setReportedMaxHp(v: number) { reportedMaxHp = v; world.maxHp = hpTracker.maxFor(v); }
+/** Al entrar al mundo (otra conexión u otro personaje): lo que se vio de vida antes no vale. */
+export function resetHp(maxHp: number) { hpTracker.reset(); setReportedMaxHp(maxHp); }
 export function trackWorld() {
   // Exp total: la exp de cada kill suma acá (el panel arma la barra con esto).
   EventBus.on('ExperienceGained', (raw: any) => { world.exp += new ExperienceGainedPacket(raw).AddedExperience; });
@@ -202,14 +211,14 @@ export function trackWorld() {
     const p = new CharacterLevelUpdatePacket(raw);
     world.level = p.Level;
     world.levelUpPoints = p.LevelUpPoints;
-    if (p.MaximumHealth) world.maxHp = p.MaximumHealth;
+    if (p.MaximumHealth) setReportedMaxHp(p.MaximumHealth);
     if (p.MaximumMana) world.maxMana = p.MaximumMana;
   });
 
   EventBus.on('CurrentHealthAndShield', (raw: any) => {
     const p = new CurrentHealthAndShieldPacket(raw);
-    world.hp = hpTracker.feed(p.Health, world.maxHp);
-    world.maxHp = hpTracker.maxFor(world.maxHp);
+    world.hp = hpTracker.feed(p.Health, reportedMaxHp);
+    world.maxHp = hpTracker.maxFor(reportedMaxHp);
   });
 
   EventBus.on('CurrentManaAndAbility', (raw: any) => {

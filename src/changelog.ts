@@ -4,6 +4,15 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.4.3',
+    date: '2026-10-30',
+    items: [
+      'Arreglado: después de Swell Life creía tener poca vida para siempre, tomaba una poción cada 2,5 s y casi no atacaba ("En pausa: estás jugando a mano").',
+      'El automático ya no se pausa solo: lo prendés y lo apagás vos con el interruptor.',
+      'Si tres pociones seguidas dejan la vida exactamente igual (estás lleno y lo leyó mal), deja de tomar 30 s.',
+    ],
+  },
+  {
     version: '0.4.2',
     date: '2026-10-30',
     items: [

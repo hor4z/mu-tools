@@ -14,7 +14,7 @@ import { createPacketReader } from './bot/net/socket';
 import { XOR32_KEY_097D, attachFakeGameSocket, detachFakeGameSocket, resendPageFrame, syncGameCounter } from './bot/core/connection';
 import { trackPanelPackets } from './bot/core/events';
 import { assist, bot, world } from './bot/core/state';
-import { onMapArrival, parseCharacterInformation097, parseCharacterList097, trackWorld, watchMoney } from './bot/core/world';
+import { onMapArrival, parseCharacterInformation097, parseCharacterList097, resetHp, trackWorld, watchMoney } from './bot/core/world';
 import { watchChat } from './bot/core/chat';
 import { DIR_DELTA, log, sleep } from './bot/core/util';
 import { skills as gameSkills } from './bot/core/gamedata';
@@ -98,6 +98,7 @@ export function onPageSend(frame: Uint8Array): boolean {
       const [count, plain] = (pageDecryptor as unknown as { DecryptC3(d: Uint8Array): [number, Uint8Array] }).DecryptC3(Uint8Array.from(frame));
       // El latido del cliente (C3 0E, cada 5 s) no es una acción tuya: si pausara al asistente, lo frenaba la mitad del tiempo.
       // Tampoco el skill o el levantar que el asistente le pidió al cliente (assist.cast, assist.pickup): salen por la página, pero no son tuyos.
+      // Hoy nadie lo lee (el automático no se pausa solo); queda para detectar el juego a mano bien (issue #3).
       const assistCast = (plain[2] === 0x1e || plain[2] === 0x19 || plain[2] === 0x22) && Date.now() - assist.nativeCastAt < NATIVE_CAST_WINDOW_MS;
       if (plain[2] !== 0x0e && !assistCast) bot.lastManualActionAt = Date.now();
       if (!counterSynced) { syncGameCounter(count); counterSynced = true; }
@@ -160,10 +161,11 @@ function applyCharacterInfo(raw: any) {
   const info = parseCharacterInformation097(raw);
   const mine = characters.find((c) => c.Name === bot.charName) ?? characters[0];
   Object.assign(world, {
-    x: info.x, y: info.y, map: info.map, hp: info.hp, maxHp: info.maxHp, mana: info.mana, maxMana: info.maxMana,
+    x: info.x, y: info.y, map: info.map, hp: info.hp, mana: info.mana, maxMana: info.maxMana,
     level: mine?.Level ?? world.level, classId: mine?.ClassId ?? null, levelUpPoints: info.levelUpPoints, exp: info.exp, expForNext: info.expForNext,
     stats: { str: info.str, agi: info.agi, vit: info.vit, ene: info.ene },
   });
+  resetHp(info.maxHp);
   bot.lastMoney = info.money;
   bot.inGameAt = Date.now();
   bot.kicked = false;
