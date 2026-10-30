@@ -202,6 +202,8 @@ const hpTracker = new HpTracker();
  */
 let reportedMaxHp = 0;
 export function setReportedMaxHp(v: number) { reportedMaxHp = v; world.maxHp = hpTracker.maxFor(v); }
+/** Al entrar al mundo (otra conexión u otro personaje): lo que se vio de vida antes no vale. */
+export function resetHp(maxHp: number) { hpTracker.reset(); setReportedMaxHp(maxHp); }
 export function trackWorld() {
   // Exp total: la exp de cada kill suma acá (el panel arma la barra con esto).
   EventBus.on('ExperienceGained', (raw: any) => { world.exp += new ExperienceGainedPacket(raw).AddedExperience; });

@@ -35,6 +35,8 @@ let heals = { count: 0, hpAt: 0, until: 0 };
 function drinkIfNeeded(): boolean {
   if (!assist.press) return false;
   const now = Date.now();
+  // Cada vez que la vida vuelve arriba del umbral empieza de cero: el seguro no suma pociones de peleas distintas.
+  if (world.maxHp > 0 && (world.hp / world.maxHp) * 100 > HEAL_AT_PCT) heals = { ...heals, count: 0, hpAt: 0 };
   if (world.maxHp > 0 && (world.hp / world.maxHp) * 100 <= HEAL_AT_PCT && now - lastHealAt >= POTION_GAP_MS && now >= heals.until) {
     lastHealAt = now;
     // Solo si la vida quedó EXACTAMENTE igual: peleando baja aunque las pociones anden, y ahí no hay que dejar de curarse.
