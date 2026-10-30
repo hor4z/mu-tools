@@ -24,7 +24,7 @@ const POTION_GAP_MS = 1500;
 let lastHealAt = 0;
 let lastManaAt = 0;
 /**
- * Seguro: si tres pociones de vida seguidas no subieron la vida, el porcentaje está mal leído (pasó con un máximo viejo de Swell Life): deja de
+ * Seguro: si tres pociones de vida seguidas dejan la vida exactamente igual, el porcentaje está mal leído (pasó con un máximo viejo de Swell Life): deja de
  * tomar un rato en vez de vaciar el inventario.
  */
 const USELESS_HEALS = 3;
@@ -37,9 +37,10 @@ function drinkIfNeeded(): boolean {
   const now = Date.now();
   if (world.maxHp > 0 && (world.hp / world.maxHp) * 100 <= HEAL_AT_PCT && now - lastHealAt >= POTION_GAP_MS && now >= heals.until) {
     lastHealAt = now;
-    heals = world.hp > heals.hpAt || !heals.count ? { count: 1, hpAt: world.hp, until: 0 } : { ...heals, count: heals.count + 1 };
+    // Solo si la vida quedó EXACTAMENTE igual: peleando baja aunque las pociones anden, y ahí no hay que dejar de curarse.
+    heals = world.hp !== heals.hpAt || !heals.count ? { count: 1, hpAt: world.hp, until: 0 } : { ...heals, count: heals.count + 1 };
     if (heals.count > USELESS_HEALS) {
-      log(`Asistente: ${USELESS_HEALS} pociones no subieron la vida (${world.hp}/${world.maxHp}); dejo de tomar ${HEAL_BACKOFF_MS / 1000} s.`);
+      log(`Asistente: ${USELESS_HEALS} pociones no cambiaron la vida (${world.hp}/${world.maxHp}); dejo de tomar ${HEAL_BACKOFF_MS / 1000} s.`);
       heals = { count: 0, hpAt: 0, until: now + HEAL_BACKOFF_MS };
       return false;
     }
