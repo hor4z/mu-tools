@@ -6,14 +6,15 @@
 import type { PickKind, Status } from '../assistant';
 import { EXT_BUILD, EXT_VERSION } from '../build-info';
 import { CHANGELOG } from '../changelog';
-import { readPoints } from '../page/stats';
+import { previewStats, readPoints } from '../page/stats';
 import { chime, unlockSound } from './sound';
 
 export type PanelDeps = {
   status(): Status;
   /** Devuelve el motivo si no se pudo. */
   setAssist(change: { attack?: boolean; pick?: PickKind; roam?: number }): string | null;
-  investStats(): Promise<void>;
+  /** Reparte los puntos libres; devuelve el motivo si no pudo. */
+  investStats(): Promise<string | null>;
   /** Elige un skill en la barra del juego. true si quedó elegido. */
   selectSkill(name: string): Promise<boolean>;
 };
@@ -205,6 +206,7 @@ export function mountPanel(deps: PanelDeps) {
   let error: { text: string; until: number } | null = null;
   let points = 0;
   let pointsAt = 0;
+  let plan: string | null = null;
   let lastAlertId = 0;
   let investing = false;
 
@@ -223,7 +225,9 @@ export function mountPanel(deps: PanelDeps) {
   statsBtn.onclick = () => {
     investing = true;
     refresh();
-    void deps.investStats().finally(() => { investing = false; pointsAt = 0; refresh(); });
+    void deps.investStats()
+      .then((reason) => { if (reason) error = { text: reason, until: Date.now() + ERROR_MS }; })
+      .finally(() => { investing = false; pointsAt = 0; refresh(); });
   };
 
   bell.onclick = () => {
@@ -318,9 +322,12 @@ export function mountPanel(deps: PanelDeps) {
       if (s.loot.kind !== 'zen' && s.loot.id !== lastAlertId) { lastAlertId = s.loot.id; if (prefs.sound) chime(); }
     }
 
-    setText(statsBtn, investing ? 'Repartiendo…' : points > 0 ? `Repartir ${points} puntos` : 'Repartir puntos');
+    if (points > 0 && now === pointsAt) plan = previewStats();
+    setText(statsBtn, investing ? 'Repartiendo…' : points > 0 ? `Repartir ${points}${plan ? `: ${plan}` : ' puntos'}` : 'Repartir puntos');
     statsBtn.disabled = investing || points <= 0;
-    statsBtn.title = points > 0 ? 'Energía hasta emparejar con fuerza, después mitad y mitad' : 'Abrí la ventana de personaje (C) para ver los puntos';
+    statsBtn.title = points > 0
+      ? `${plan ?? ''}\nCada punto al stat que más sube el daño por segundo del giro: agilidad (velocidad, hasta 508), fuerza o energía. Sin vitalidad.`
+      : 'Abrí la ventana de personaje (C) para ver los puntos';
   }
 
   if (prefs.roam !== undefined) deps.setAssist({ roam: prefs.roam });

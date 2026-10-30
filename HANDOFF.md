@@ -37,7 +37,11 @@ Estado para retomar. Lo estable (comandos, estructura, reglas) está en [AGENTS.
 3. **Alcance**: el cliente lanza hasta `distance + 0.5` (distancia real); el cerebro decide con `distance` (sin el +0.5) por la diferencia casilla/decimales.
 4. **Levantar**: si el cliente ya mandó el pedido (`assist.picking` false) y el drop sigue 600 ms después, el server no lo dio: se deja 30 s.
 5. **Apagar frena en el acto** (`stopNative`: caminar a la propia casilla, el cliente frena y avisa con su paquete) y el interruptor ignora doble click.
-6. Panel: no se sale de la pantalla con las novedades abiertas; cuenta solo monstruos vivos cerca.
+6. **Repartir puntos** (`src/page/stats.ts`): el juego pasó a castellano ("Fue") y el reparto se cortaba en silencio. Ahora `planStats` da
+   cada punto al stat con más ganancia de daño por segundo del giro: Agi por velocidad de ataque (animación `0.24 + 0.004 × vel`, sin tope hasta
+   508; desde 509 el cliente usa otro factor y es más lenta), Fue/Ene por daño (iguales en Ene = Fue − 2000). Sin Vit (pedido del usuario).
+   Supuesto sin medir: que el server acepte giros más rápidos. Medir el giro (~550 ms con vel 201) después de repartir Agi.
+7. Panel: no se sale de la pantalla con las novedades abiertas; cuenta solo monstruos vivos cerca.
 
 Sin probar en vivo: el freno al apagar (0.4.2) y una medición limpia en un spot lleno sin tocar nada (las de hoy fueron con el spot casi vacío o
 con el usuario jugando). Con un cartel del juego abierto (invitación a party) el cliente no lanza: no es del asistente.

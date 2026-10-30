@@ -9,6 +9,8 @@ export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
     items: [
       'Al apagar el auto attack frena en el acto: antes terminaba el camino que había empezado y parecía que seguía prendido.',
       'Un doble click en el interruptor ya no lo prende y apaga a la vez.',
+      'Repartir puntos anda de nuevo con el juego en castellano ("Fue" en vez de "Str"); si no puede, dice por qué.',
+      'Reparto más inteligente: cada punto va a lo que más sube el daño por segundo del giro (agilidad hasta 508 de velocidad, fuerza o energía), sin vitalidad. El botón muestra el plan antes de repartir.',
     ],
   },
   {
