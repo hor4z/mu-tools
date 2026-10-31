@@ -4,6 +4,16 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.0',
+    date: '2026-10-31',
+    items: [
+      'Nueva sección Rendimiento en el panel: experiencia y Zen por hora de los últimos 10 minutos, y la sesión (exp, Zen levantado, kills).',
+      'Con el servidor local prendido (bun run server) guarda todo en la base y el panel compara esta zona con la mejor conocida.',
+      'Página de rendimiento en http://127.0.0.1:8787: ranking de zonas por Zen/h y exp/h, mapa de calor por mapa, qué monstruos rinden más y las sesiones.',
+      'Se carga desde packages/extension/dist (el repo pasó a monorepo): hay que volver a cargar la extensión una vez.',
+    ],
+  },
+  {
     version: '0.4.3',
     date: '2026-10-30',
     items: [

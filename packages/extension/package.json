@@ -6,5 +6,8 @@
     "build": "bun run build.ts",
     "brain": "bun run brain-build.ts",
     "tsc": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mutool/protocol": "workspace:*"
   }
 }

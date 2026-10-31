@@ -14,6 +14,7 @@ import { createPacketReader } from './bot/net/socket';
 import { XOR32_KEY_097D, attachFakeGameSocket, detachFakeGameSocket, resendPageFrame, syncGameCounter } from './bot/core/connection';
 import { trackPanelPackets } from './bot/core/events';
 import { assist, bot, world } from './bot/core/state';
+import { notePotion, startYield, yieldSummary, type YieldSummary } from './yield';
 import { onMapArrival, parseCharacterInformation097, parseCharacterList097, resetHp, trackWorld, watchMoney } from './bot/core/world';
 import { watchChat } from './bot/core/chat';
 import { DIR_DELTA, log, sleep } from './bot/core/util';
@@ -35,6 +36,8 @@ export type Status = {
   skills: SkillInfo[]; selectedSkill: number;
   /** Hasta cuántas casillas se mueve a buscar (0: quieto) y qué está haciendo ahora. */
   roam: number; doing: typeof assist.doing;
+  /** Experiencia, Zen, kills y pociones de la sesión y de los últimos 10 min, y la zona según el servidor local (src/yield.ts). */
+  yield: YieldSummary;
 };
 export type PickKind = keyof typeof assist.pick;
 
@@ -207,7 +210,7 @@ export function startAssistant(deps: Io) {
   io = deps;
   if (started) return;
   started = true;
-  assist.press = (key) => io?.press(key);
+  assist.press = (key) => { notePotion(key); io?.press(key); };
   assist.face = (x, y) => io?.face(x, y);
   assist.cast = (id) => io?.cast(id) ?? false;
   assist.alive = (id) => io?.alive(id) ?? true;
@@ -223,6 +226,7 @@ export function startAssistant(deps: Io) {
   trackWorld();
   trackPanelPackets();
   watchMoney();
+  startYield();
   EventBus.on('CharacterList', (raw: any) => { characters = parseCharacterList097(raw); });
   EventBus.on('CharacterInformation', applyCharacterInfo);
   EventBus.on('GameServerEntered', (raw: any) => { bot.playerId = new GameServerEnteredPacket(raw).PlayerId & 0x7fff; });
@@ -278,6 +282,6 @@ export function status(): Status {
     enabled: assist.enabled, pick: assist.pick, inGame: !!bot.inGameAt, ready: !notReadyReason(), paused: brain.pausedByUser?.() ?? false,
     name: bot.charName, hp: world.hp, maxHp: world.maxHp, mana: world.mana, maxMana: world.maxMana, monsters: brain.monstersNear?.() ?? world.npcs.size,
     skill: brain.skillName(), target: assist.target, loot: brain.lootHint(), skills: knownSkills(), selectedSkill: assist.clientSkill,
-    roam: assist.roam, doing: assist.doing,
+    roam: assist.roam, doing: assist.doing, yield: yieldSummary(),
   };
 }

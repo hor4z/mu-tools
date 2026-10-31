@@ -8,7 +8,9 @@
   "scripts": {
     "build": "bun run --cwd packages/extension build",
     "brain": "bun run --cwd packages/extension brain",
-    "tsc": "bun run --filter '*' tsc"
+    "tsc": "bun run --filter '*' tsc",
+    "server": "bun run --cwd packages/server start",
+    "web:build": "bun run --cwd packages/web build"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

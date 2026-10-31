@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "mutool",
-  "version": "0.4.3",
-  "description": "Asistente para MU Slow dentro de la página del juego: auto attack con el skill elegido, levantar Zen, joyas y excelentes, y reparto de puntos. Sin servidor ni proceso externo.",
+  "version": "0.5.0",
+  "description": "Asistente para MU Slow dentro de la página del juego: auto attack con el skill elegido, levantar Zen, joyas y excelentes, reparto de puntos y rendimiento de zen y experiencia (con historial si corre el servidor local).",
   "content_scripts": [
     {
       "matches": [
@@ -13,6 +13,21 @@
       ],
       "run_at": "document_start",
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://mu.mormon.garden/*"
+      ],
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
     }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:8787/*"
   ]
 }

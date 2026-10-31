@@ -20,7 +20,7 @@ export type PanelDeps = {
 };
 
 const PREFS_KEY = 'asistente-prefs';
-type Prefs = { x?: number; y?: number; collapsed?: boolean; sound?: boolean; seenVersion?: string; roam?: number };
+type Prefs = { x?: number; y?: number; collapsed?: boolean; sound?: boolean; seenVersion?: string; roam?: number; yieldClosed?: boolean };
 const PICKS: { kind: PickKind; label: string; hint: string }[] = [
   { kind: 'zen', label: 'Zen', hint: 'Levanta el Zen: a 2 casillas, o en la zona de Moverse con el auto attack prendido' },
   { kind: 'jewels', label: 'Joyas', hint: 'Joyas y plumas, como el Zen (si hay lugar en la bolsa)' },
@@ -85,7 +85,27 @@ const CSS = `
 .news h4 span { color: #6f6656; font-weight: 400; }
 .news ul { margin: 0 0 7px; padding-left: 14px; }
 .news li { margin-bottom: 2px; }
+.yhead { all: unset; cursor: pointer; display: flex; justify-content: space-between; width: 100%; }
+.yhead .section { margin-bottom: 0; }
+.ygrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }
+.ycell { padding: 5px 7px; border-radius: 6px; background: #221d16; }
+.ynum { font-size: 15px; font-weight: 700; color: #f6d47c; font-variant-numeric: tabular-nums; }
+.ynum.exp { color: #9fd3ff; }
+.ylab { color: #9d927d; font-size: 10px; }
+.yline { margin-top: 5px; color: #9d927d; font-size: 11px; }
+.yline b { color: #cfc6b3; font-weight: 600; }
+.yclosed .ygrid, .yclosed .yline { display: none; }
 `;
+
+/** 1234 → 1,2k; 3456789 → 3,5M. */
+function compact(n: number): string {
+  const a = Math.abs(n);
+  const f = (v: number, u: string) => `${v.toFixed(v < 10 ? 1 : 0).replace('.', ',')}${u}`;
+  if (a >= 1e9) return f(n / 1e9, 'G');
+  if (a >= 1e6) return f(n / 1e6, 'M');
+  if (a >= 1e3) return f(n / 1e3, 'k');
+  return String(Math.round(n));
+}
 
 function loadPrefs(): Prefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Prefs; } catch { return {}; }
@@ -183,6 +203,22 @@ export function mountPanel(deps: PanelDeps) {
   const statusLine = el('div', 'status');
   const lootLine = el('div', 'loot');
   const statsBtn = el('button', 'btn', 'Repartir puntos');
+  // Rendimiento: los últimos 10 min en grande, la sesión en chico y la zona según el servidor local (src/yield.ts).
+  const yieldBox = el('div');
+  const yieldHead = el('button', 'yhead');
+  const yieldFold = el('span', 'sub');
+  yieldHead.append(el('div', 'section', 'Rendimiento'), yieldFold);
+  const yieldGrid = el('div', 'ygrid');
+  const expCell = el('div', 'ycell'), zenCell = el('div', 'ycell');
+  const expNum = el('div', 'ynum exp'), zenNum = el('div', 'ynum');
+  const expLab = el('div', 'ylab'), zenLab = el('div', 'ylab');
+  expCell.append(expNum, expLab);
+  zenCell.append(zenNum, zenLab);
+  yieldGrid.append(expCell, zenCell);
+  const sessionLine = el('div', 'yline');
+  const zoneLine = el('div', 'yline');
+  yieldBox.append(yieldHead, yieldGrid, sessionLine, zoneLine);
+  yieldHead.onclick = () => { prefs.yieldClosed = !prefs.yieldClosed; savePrefs(prefs); refresh(); place(box.offsetLeft, box.offsetTop); };
   // Versión en chico al pie; al tocarla se ven las novedades. Marca "nuevo" hasta que se miran las de una versión que no se había visto.
   const news = el('div', 'news');
   for (const v of CHANGELOG) {
@@ -198,7 +234,7 @@ export function mountPanel(deps: PanelDeps) {
   const newBadge = el('span', 'new', 'nuevo');
   ver.append(newBadge);
   foot.append(ver, el('span'));
-  body.append(attackRow, skillBox, roamBox, pickBox, statusLine, lootLine, statsBtn, news, foot);
+  body.append(attackRow, skillBox, roamBox, pickBox, statusLine, lootLine, yieldBox, statsBtn, news, foot);
   box.append(head, body);
   root.append(style, box);
 
@@ -322,12 +358,39 @@ export function mountPanel(deps: PanelDeps) {
       if (s.loot.kind !== 'zen' && s.loot.id !== lastAlertId) { lastAlertId = s.loot.id; if (prefs.sound) chime(); }
     }
 
+    renderYield(s);
+
     if (points > 0 && now === pointsAt) plan = previewStats();
     setText(statsBtn, investing ? 'Repartiendo…' : points > 0 ? `Repartir ${points}${plan ? `: ${plan}` : ' puntos'}` : 'Repartir puntos');
     statsBtn.disabled = investing || points <= 0;
     statsBtn.title = points > 0
       ? `${plan ?? ''}\nCada punto al stat que más sube el daño por segundo del giro: agilidad (velocidad, hasta 508), fuerza o energía. Sin vitalidad.`
       : 'Abrí la ventana de personaje (C) para ver los puntos';
+  }
+
+  function renderYield(s: Status) {
+    const y = s.yield;
+    yieldBox.classList.toggle('yclosed', !!prefs.yieldClosed);
+    setText(yieldFold, prefs.yieldClosed ? `${compact(y.recent.zenH)} zen/h ▸` : '▾');
+    if (prefs.yieldClosed) return;
+    const mins = Math.round(y.recent.minutes);
+    setText(expNum, compact(y.recent.expH));
+    setText(expLab, `exp/h · últimos ${mins || 1} min`);
+    setText(zenNum, compact(y.recent.zenH));
+    setText(zenLab, `zen/h · ${compact(y.recent.killsH)} kills/h`);
+    const ses = y.session;
+    sessionLine.replaceChildren('Sesión ', el('b', '', `${Math.round(ses.minutes)} min`), ` · ${compact(ses.exp)} exp · ${compact(ses.zen)} zen · ${ses.kills} kills`);
+    sessionLine.title = `Por hora en la sesión: ${compact(ses.expH)} exp, ${compact(ses.zenH)} zen, ${compact(ses.potionsH)} pociones`;
+    if (!y.server) {
+      setText(zoneLine, 'Sin servidor local: no se guarda el historial.');
+      zoneLine.title = 'bun run server en mu-tools guarda los datos y muestra el ranking de zonas en http://127.0.0.1:8787';
+      return;
+    }
+    zoneLine.title = 'Promedios guardados (últimos 14 días) en http://127.0.0.1:8787';
+    const z = y.zone;
+    const here = z?.here ? `Esta zona ${compact(z.here.zenH)} zen/h` : 'Zona nueva';
+    const best = z?.best ? ` · mejor: ${z.best.name} ${compact(z.best.zenH)}` : '';
+    setText(zoneLine, here + best);
   }
 
   if (prefs.roam !== undefined) deps.setAssist({ roam: prefs.roam });

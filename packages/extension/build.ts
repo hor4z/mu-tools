@@ -9,7 +9,8 @@ const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: root }
 const commit = git('rev-parse', '--short', 'HEAD') + (git('status', '--porcelain', '--', 'src', 'manifest.json', 'data') ? '+' : '');
 const built = new Date().toLocaleString('sv-SE').slice(0, 16); // hora local, AAAA-MM-DD HH:MM
 const result = await Bun.build({
-  entrypoints: [join(root, 'src/inject.ts')],
+  // inject.js corre en la página; bridge.js (content script aislado) y background.js (service worker) llevan los datos al servidor local.
+  entrypoints: ['inject.ts', 'bridge.ts', 'background.ts'].map((f) => join(root, 'src', f)),
   target: 'browser',
   format: 'iife',
   // La extensión es un script clásico: `import.meta` es un error de sintaxis ahí (el código del bot lo usa solo para saber la carpeta del repo).

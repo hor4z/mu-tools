@@ -11,10 +11,34 @@
     },
     "packages/extension": {
       "name": "@mutool/extension",
+      "dependencies": {
+        "@mutool/protocol": "workspace:*",
+      },
+    },
+    "packages/protocol": {
+      "name": "@mutool/protocol",
+    },
+    "packages/server": {
+      "name": "@mutool/server",
+      "dependencies": {
+        "@mutool/protocol": "workspace:*",
+      },
+    },
+    "packages/web": {
+      "name": "@mutool/web",
+      "dependencies": {
+        "@mutool/protocol": "workspace:*",
+      },
     },
   },
   "packages": {
     "@mutool/extension": ["@mutool/extension@workspace:packages/extension"],
+
+    "@mutool/protocol": ["@mutool/protocol@workspace:packages/protocol"],
+
+    "@mutool/server": ["@mutool/server@workspace:packages/server"],
+
+    "@mutool/web": ["@mutool/web@workspace:packages/web"],
 
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 

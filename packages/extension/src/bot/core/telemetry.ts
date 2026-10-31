@@ -4,9 +4,11 @@
  *
  * Nunca frena el juego: las filas se juntan en memoria y salen cada 5 s por HTTP; si la base no
  * responde se reintenta cada vez más espaciado y, si se acumulan más de MAX_ROWS, se tiran las más viejas.
- * Sin MUBOT_DB_URL (lo pasa la estación desde .env.db) no hace nada.
+ * En la extensión las filas salen por el bridge (page/db-bridge.ts) al servidor local (packages/server); sin el bridge no hace nada.
  */
-import { dbInsert, dbOn, dbRows } from '../../stubs/db';
+import { EXT_VERSION } from '../../build-info';
+import { bridgeInsert as dbInsert, bridgeOn as dbOn } from '../../page/db-bridge';
+import { dbRows } from '../../stubs/db';
 import { bot, hooks, world } from './state';
 import { log } from './util';
 
@@ -16,21 +18,8 @@ type Row = Record<string, unknown>;
 const FLUSH_MS = 5_000;
 export const MAX_ROWS = 5_000;
 
-/**
- * Commit del bot (para comparar versiones contra la línea base). Con cambios sin commitear le
- * suma `+` y un hash del diff: si no, todas las pruebas sobre el árbol sucio salían con el mismo
- * commit y no se podían comparar (Hume, 2026-10-19).
- */
-export const VERSION = (() => {
-  try {
-    const git = (...a: string[]) => Bun.spawnSync(['git', ...a], { cwd: import.meta.dir });
-    const r = git('rev-parse', '--short', 'HEAD');
-    if (!r.success) return 'desconocida';
-    const head = r.stdout.toString().trim();
-    const diff = git('diff', 'HEAD').stdout.toString() + git('ls-files', '--others', '--exclude-standard').stdout.toString();
-    return diff ? `${head}+${Bun.hash(diff).toString(16).slice(0, 7)}` : head;
-  } catch { return 'desconocida'; }
-})();
+/** Versión de la extensión: separa estas filas de las de mutbot en las mismas tablas (el servidor solo acepta `mutool-…`). */
+export const VERSION = `mutool-${EXT_VERSION}`;
 
 /** Consulta de solo lectura a la base (db.ts); [] si no hay base o falla (el que consulta sigue con lo que tiene). */
 export async function queryDb<T = Record<string, unknown>>(sql: string): Promise<T[]> {
@@ -38,8 +27,8 @@ export async function queryDb<T = Record<string, unknown>>(sql: string): Promise
   try { return await dbRows<T>(sql, 5_000); } catch { return []; }
 }
 
-/** Una sesión = un proceso del bot. */
-export const SESSION = `${Date.now().toString(36)}-${process.pid}`;
+/** Una sesión = una carga de la página del juego. */
+export const SESSION = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** Filas pendientes por tabla, con tope: al pasarse se descartan las más viejas. */
 export class RowBuffer {
