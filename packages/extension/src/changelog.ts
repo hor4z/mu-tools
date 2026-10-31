@@ -4,6 +4,49 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.4',
+    date: '2026-10-31',
+    items: [
+      'Datos más confiables: si la base anda lenta ya no se guardan kills y Zen repetidos, y si el servidor se cae no se pierden los kills de esa tanda.',
+      'Un retiro del baúl ya no se cuenta como Zen levantado.',
+      'El panel dice "Buscando el servidor local…" al entrar en vez de "Sin servidor" mientras pregunta.',
+    ],
+  },
+  {
+    version: '0.5.3',
+    date: '2026-10-31',
+    items: [
+      'Arreglado: la 0.5.2 no contaba el Zen levantado (el monto no viene en el drop de este server y lo descartaba).',
+      'El Zen por monstruo sale del Zen que levantás de sus drops; el baúl o un trade siguen sin contar (no hay un drop de Zen al lado).',
+      'La sesión ya no se corta al viajar entre mapas: solo al reconectar o cambiar de personaje.',
+    ],
+  },
+  {
+    version: '0.5.2',
+    date: '2026-10-31',
+    items: [
+      'Rendimiento más exacto: "últimos 10 min" ya no arrastra lo viejo si te quedás quieto, el Zen del baúl o de un trade no cuenta como levantado y cada entrada al mundo es una sesión nueva.',
+      'La mejor zona que te sugiere es de tu nivel (±10), no una que se farmeó con un personaje mucho más alto.',
+    ],
+  },
+  {
+    version: '0.5.1',
+    date: '2026-10-31',
+    items: [
+      'El panel ya no se agranda y se achica solo: el estado, el drop a la vista y el rendimiento ocupan siempre un renglón (el texto completo, con el mouse encima).',
+    ],
+  },
+  {
+    version: '0.5.0',
+    date: '2026-10-31',
+    items: [
+      'Nueva sección Rendimiento en el panel: experiencia y Zen por hora de los últimos 10 minutos, y la sesión (exp, Zen levantado, kills).',
+      'Con el servidor local prendido (bun run server) guarda todo en la base y el panel compara esta zona con la mejor conocida.',
+      'Página de rendimiento en http://127.0.0.1:8787: ranking de zonas por Zen/h y exp/h, mapa de calor por mapa, qué monstruos rinden más y las sesiones.',
+      'Se carga desde packages/extension/dist (el repo pasó a monorepo): hay que volver a cargar la extensión una vez.',
+    ],
+  },
+  {
     version: '0.4.3',
     date: '2026-10-30',
     items: [

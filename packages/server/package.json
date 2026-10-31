@@ -1,0 +1,13 @@
+{
+  "name": "@mutool/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "tsc": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mutool/protocol": "workspace:*"
+  }
+}

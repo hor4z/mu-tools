@@ -3,12 +3,8 @@
  */
 import { items, onGameData } from './gamedata';
 
-// Índices de mapa del 0.97d.
-export const MAP_NAMES: Record<number, string> = {
-  0: 'Lorencia', 1: 'Dungeon', 2: 'Devias', 3: 'Noria', 4: 'Lost Tower', 6: 'Arena',
-  7: 'Atlans', 8: 'Tarkan', 10: 'Icarus', 33: 'Aida',
-};
-export const mapName = (n: number): string => MAP_NAMES[n] ?? `mapa ${n}`;
+// Índices de mapa del 0.97d: viven en @mutool/protocol porque los usan también el servidor y la página.
+export { MAP_NAMES, mapName } from '@mutool/protocol';
 
 // Ítems: nombre y tamaño en la grilla del inventario (tabla `items` de la base, `gamedata.ts`).
 const ITEM_INFO = new Map<number, { name: string; w: number; h: number }>();

@@ -4,7 +4,7 @@
  *  - page/game-world.ts: el mundo del cliente, para que el ataque lo lance el cliente como con un click.
  *  - page/input.ts, page/skills.ts y page/stats.ts: teclas de pociones, elegir skill y repartir puntos, con clicks reales.
  *  - ui/panel.ts: el panel.
- * No hay proceso aparte, ni red local, ni base de datos.
+ * Los datos de rendimiento (yield.ts) salen por page/db-bridge.ts → bridge.js → background.js al servidor local, si está prendido.
  */
 import { onGameSocket, onGameSocketClosed, onPageSend, onServerFrame, setAssist, startAssistant, status } from './assistant';
 import { castNative, castOpts, captureGameWorld, debugWorld, faceTowards, isAlive, pickupNative, pickupPending, playerTile, stopNative, tileOf, walkNative } from './page/game-world';

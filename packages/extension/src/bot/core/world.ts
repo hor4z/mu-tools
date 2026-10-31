@@ -277,7 +277,9 @@ export function trackWorld() {
     const b = toBytes(raw);
     // Zen levantado: C3 08 22 FE <zen total u32 BE> (no llega InventoryMoneyUpdate). FF = no se pudo.
     if (b[3] === 0xfe && b.length >= 8) {
+      const before = bot.lastMoney;
       bot.lastMoney = ((b[4] << 24) >>> 0) + (b[5] << 16) + (b[6] << 8) + b[7];
+      if (bot.lastMoney > before) for (const fn of zenPickedListeners) fn(bot.lastMoney - before);
       return;
     }
     if (b[3] === 0xff) return;
@@ -518,6 +520,10 @@ export function trackWorld() {
 
 // --- Zen -----------------------------------------------------------
 // El bot no compra ni vende (pedido del usuario): solo lleva el zen para el panel.
+/** Quien quiere saber cuánto Zen entró al levantar (el rendimiento, src/yield.ts). Las ventas y compras no pasan por acá. */
+const zenPickedListeners: ((amount: number) => void)[] = [];
+export const onZenPicked = (fn: (amount: number) => void) => { zenPickedListeners.push(fn); };
+
 export function watchMoney() {
   EventBus.on('InventoryMoneyUpdate', (raw: any) => {
     bot.lastMoney = new InventoryMoneyUpdatePacket(raw).Money;

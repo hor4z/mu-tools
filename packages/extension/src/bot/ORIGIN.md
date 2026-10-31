@@ -9,7 +9,10 @@ Cambios hechos acá respecto de la ref:
 | --- | --- |
 | `core/state.ts` | `assist`: `pick` (Zen/joyas/excelentes) en vez de `sniper`/`gold`; `cast`, `alive`, `clientSkill`, `nativeCastAt`, `face`, `roam`/`anchor`/`doing`, `pickup`, `picking`, `walk`, `stop`, `here`, `posOf` (posiciones del cliente: las del bot quedan atrasadas). Sin los tipos `Warp` y `StatusServer` (no viajan). |
 | `brain/assist.ts` | ataque por el cliente (`assist.cast`, que se acerca solo), objetivo en una zona alrededor de un ancla, levantar caminando y volver al ancla, solo monstruos vivos, skill elegido en la barra, levantar por clase; sin pausa automática por juego a mano (`pausedByUser` siempre false, issue #3). |
-| `core/gamedata.ts`, `core/telemetry.ts` | importan `../../stubs/db` en vez de `@mubot/db`. |
+| `core/gamedata.ts` | importa `../../stubs/db` en vez de `@mubot/db`. |
+| `core/telemetry.ts` | manda por el bridge de la página (`../../page/db-bridge`) en vez de `@mubot/db`; `VERSION` = `mutool-<versión>`; `SESSION` por entrada al mundo (`newSession`); solo salen `ticks` y los eventos del rendimiento (kill, zen, potion, death). |
+| `core/panel-logic.ts` | `MAP_NAMES`/`mapName` vienen de `@mutool/protocol` (los usan también el servidor y la página). |
+| `core/world.ts` | `onZenPicked`: avisa cuánto Zen entró al levantar (lo usa `src/yield.ts`). |
 | `core/chat.ts`, `core/journal.ts` | importan `../../stubs/protocol` en vez de `@mubot/protocol`. |
 | `core/connection.ts` | solo comentarios (rutas). |
 | `core/health.ts`, `core/world.ts` | `maxFor` usa la mayor vida vista solo cerca del tope de 16 bits; `world.maxHp` sale del máximo informado (`setReportedMaxHp`): un buff de vida dejaba el máximo inflado para siempre. |

@@ -4,9 +4,11 @@
  *
  * Nunca frena el juego: las filas se juntan en memoria y salen cada 5 s por HTTP; si la base no
  * responde se reintenta cada vez más espaciado y, si se acumulan más de MAX_ROWS, se tiran las más viejas.
- * Sin MUBOT_DB_URL (lo pasa la estación desde .env.db) no hace nada.
+ * En la extensión las filas salen por el bridge (page/db-bridge.ts) al servidor local (packages/server); sin el bridge no hace nada.
  */
-import { dbInsert, dbOn, dbRows } from '../../stubs/db';
+import { EXT_VERSION } from '../../build-info';
+import { bridgeInsert as dbInsert, bridgeOn as dbOn } from '../../page/db-bridge';
+import { dbRows } from '../../stubs/db';
 import { bot, hooks, world } from './state';
 import { log } from './util';
 
@@ -16,21 +18,8 @@ type Row = Record<string, unknown>;
 const FLUSH_MS = 5_000;
 export const MAX_ROWS = 5_000;
 
-/**
- * Commit del bot (para comparar versiones contra la línea base). Con cambios sin commitear le
- * suma `+` y un hash del diff: si no, todas las pruebas sobre el árbol sucio salían con el mismo
- * commit y no se podían comparar (Hume, 2026-10-19).
- */
-export const VERSION = (() => {
-  try {
-    const git = (...a: string[]) => Bun.spawnSync(['git', ...a], { cwd: import.meta.dir });
-    const r = git('rev-parse', '--short', 'HEAD');
-    if (!r.success) return 'desconocida';
-    const head = r.stdout.toString().trim();
-    const diff = git('diff', 'HEAD').stdout.toString() + git('ls-files', '--others', '--exclude-standard').stdout.toString();
-    return diff ? `${head}+${Bun.hash(diff).toString(16).slice(0, 7)}` : head;
-  } catch { return 'desconocida'; }
-})();
+/** Versión de la extensión: separa estas filas de las de mutbot en las mismas tablas (el servidor solo acepta `mutool-…`). */
+export const VERSION = `mutool-${EXT_VERSION}`;
 
 /** Consulta de solo lectura a la base (db.ts); [] si no hay base o falla (el que consulta sigue con lo que tiene). */
 export async function queryDb<T = Record<string, unknown>>(sql: string): Promise<T[]> {
@@ -38,8 +27,16 @@ export async function queryDb<T = Record<string, unknown>>(sql: string): Promise
   try { return await dbRows<T>(sql, 5_000); } catch { return []; }
 }
 
-/** Una sesión = un proceso del bot. */
-export const SESSION = `${Date.now().toString(36)}-${process.pid}`;
+/** Una sesión = una entrada al mundo (src/yield.ts llama a `newSession` al volver a entrar o cambiar de personaje). */
+const sessionId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export let SESSION = sessionId();
+export function newSession() { SESSION = sessionId(); }
+
+/**
+ * En la extensión solo salen los eventos del rendimiento (src/yield.ts). Los demás `trackEvent` del núcleo (decide, monster_seen, drop…) son de
+ * mutbot: acá ensuciarían la tabla compartida y nadie los consulta.
+ */
+const EVENT_KINDS = new Set(['kill', 'zen', 'potion', 'death']);
 
 /** Filas pendientes por tabla, con tope: al pasarse se descartan las más viejas. */
 export class RowBuffer {
@@ -86,7 +83,9 @@ export const chTime = (ms: number) => new Date(ms).toISOString().replace('T', ' 
 /** Anotar una fila (con ts, personaje y sesión). */
 export function track(t: Table, row: Row, now = Date.now()) {
   if (!telemetryOn()) return;
-  buffer.push(t, { ts: chTime(now), char: bot.charName, ...(t === 'players_seen' ? {} : { session: SESSION, version: VERSION }), ...row });
+  // players_seen no lleva version y el servidor no la acepta.
+  if (t === 'players_seen' || (t === 'events' && !EVENT_KINDS.has(String(row.kind)))) return;
+  buffer.push(t, { ts: chTime(now), char: bot.charName, session: SESSION, version: VERSION, ...row });
   timer ??= setInterval(() => void flush(), FLUSH_MS);
 }
 
@@ -98,20 +97,29 @@ export function trackEvent(kind: string, text = '', num1 = 0, num2 = 0, data: Ro
   });
 }
 
+let flushing = false;
 async function flush() {
-  if (Date.now() < retryAt || !buffer.size) return;
-  for (const [t, rows] of buffer.take()) {
-    try {
-      await dbInsert(t, rows, 4_000);
-      if (warned) log('Datos: la base volvió, sigo mandando.');
-      warned = false;
-      fails = 0;
-    } catch (e) {
-      buffer.restore(t, rows);
-      retryAt = Date.now() + Math.min(120_000, 5_000 * 2 ** fails++);
-      if (!warned) log(`Datos: no pude guardar en la base (${(e as Error).message}); sigo jugando y reintento.`);
-      warned = true;
-      return;
+  if (flushing || Date.now() < retryAt || !buffer.size) return;
+  flushing = true;
+  const batches = buffer.take();
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      const [t, rows] = batches[i]!;
+      try {
+        await dbInsert(t, rows, 4_000);
+        if (warned) log('Datos: la base volvió, sigo mandando.');
+        warned = false;
+        fails = 0;
+      } catch (e) {
+        // Vuelve todo lo que no salió, no solo esta tabla: si no, los eventos de la misma tanda se perdían.
+        for (const [rt, rr] of batches.slice(i)) buffer.restore(rt, rr);
+        retryAt = Date.now() + Math.min(120_000, 5_000 * 2 ** fails++);
+        if (!warned) log(`Datos: no pude guardar en la base (${(e as Error).message}); sigo jugando y reintento.`);
+        warned = true;
+        return;
+      }
     }
+  } finally {
+    flushing = false;
   }
 }
