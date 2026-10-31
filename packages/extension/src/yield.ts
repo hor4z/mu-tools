@@ -9,7 +9,7 @@
  *    2,5 s después: el drop suele llegar antes que la experiencia), y al levantar se busca el drop de Zen más cercano al personaje.
  *  - `potion`: num1 = 0 vida, 1 maná. `death`: el personaje murió.
  */
-import type { ZoneLive } from '@mutool/protocol';
+import { tileDist, type ZoneLive } from '@mutool/protocol';
 import { ExperienceGainedPacket } from './bot/packets';
 import { EventBus } from './bot/net/eventBus';
 import { drops } from './bot/core/loot-state';
@@ -59,7 +59,7 @@ function mark(m: Partial<Mark>) {
   prune(now);
 }
 
-const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= ZEN_DROP_TILES;
+const near = (a: { x: number; y: number }, b: { x: number; y: number }) => tileDist(a, b) <= ZEN_DROP_TILES;
 const posOf = (id: number) => assist.posOf?.(id) ?? world.npcs.get(id) ?? null;
 const myTile = () => assist.here?.() ?? { x: world.x, y: world.y };
 
@@ -138,15 +138,15 @@ function tick() {
   if (!bot.inGameAt || bot.kicked) return;
   const now = Date.now();
   const here = myTile();
-  let near = 0;
+  let around = 0;
   for (const n of world.npcs.values()) {
     const at = posOf(n.id);
-    if (at && Math.max(Math.abs(at.x - here.x), Math.abs(at.y - here.y)) <= 10) near++;
+    if (at && tileDist(at, here) <= 10) around++;
   }
   track('ticks', {
     map: world.map, x: here.x, y: here.y, level: world.level, exp_total: world.exp, exp_min_1m: expLastMinute(now),
     hp: Math.max(0, world.hp), mp: Math.max(0, world.mana), mode: assist.enabled ? 'assist' : 'manual', phase: assist.target ? 'fight' : 'idle',
-    spot: mapName(world.map), monsters_near: near, doing: assist.doing, skill: assist.clientSkill,
+    spot: mapName(world.map), monsters_near: around, doing: assist.doing, skill: assist.clientSkill,
   }, now);
 }
 
@@ -160,8 +160,8 @@ export function notePotion(key: string) {
 }
 
 export type YieldWindow = { minutes: number; expH: number; zenH: number; killsH: number; potionsH: number; exp: number; zen: number; kills: number };
-/** `zone`: lo que dice el servidor local de la zona de ahora contra la mejor conocida (GET /api/live). */
-export type YieldSummary = { session: YieldWindow; recent: YieldWindow; zone: ZoneLive | null; server: boolean };
+/** `server`: null mientras no se preguntó; `zone`: lo que dice el servidor local de la zona de ahora contra la mejor conocida (GET /api/live). */
+export type YieldSummary = { session: YieldWindow; recent: YieldWindow; zone: ZoneLive | null; server: boolean | null };
 
 function rates(minutes: number, exp: number, zen: number, kills: number, potions: number): YieldWindow {
   const h = Math.max(minutes, 1) / 60;
@@ -185,9 +185,10 @@ export function yieldSummary(): YieldSummary {
 
 const LIVE_MS = 60_000;
 let live: ZoneLive | null = null;
-let serverOk = false;
+let serverOk: boolean | null = null;
 async function fetchLive() {
-  if (!bridgeOn() || !bot.inGameAt) return;
+  if (!bot.inGameAt) return;
+  if (!bridgeOn()) { serverOk = false; return; }
   const here = myTile();
   try {
     live = await bridgeGet<ZoneLive>(`/api/live?map=${world.map}&x=${here.x}&y=${here.y}&level=${world.level}`);
@@ -197,15 +198,26 @@ async function fetchLive() {
   }
 }
 
+const recentPicks: number[] = [];
+const OUTLIER = 20;
+const OUTLIER_MIN = 200_000;
+const median = (v: number[]) => (v.length ? [...v].sort((a, b) => a - b)[v.length >> 1]! : 0);
+
 /** Zen levantado: se le atribuye al drop de Zen más cercano (en el piso o recién ido). Sin ninguno cerca no fue un drop y no cuenta. */
 function onPicked(amount: number) {
+  // El total de Zen del bot no se entera del baúl, las compras ni reparar: tras un retiro, la diferencia del próximo levantar trae el retiro entero.
+  // Un levantar que es más de OUTLIER veces la mediana de los últimos no es un drop.
+  const usual = median(recentPicks);
+  if (usual > 0 && amount > usual * OUTLIER && amount > OUTLIER_MIN) return;
   sample(); // que el drop recién levantado ya figure como ido
   const me = myTile();
-  const dist = (d: MoneyDrop) => Math.max(Math.abs(d.x - me.x), Math.abs(d.y - me.y));
+  const dist = (d: MoneyDrop) => tileDist(d, me);
   let best: MoneyDrop | null = null;
   for (const d of [...goneMoney, ...seenMoneyDrops.values()]) if (!d.picked && dist(d) <= PICK_TILES && (!best || dist(d) < dist(best))) best = d;
   if (!best) return;
   best.picked = true; // un drop se levanta una vez
+  recentPicks.push(amount);
+  if (recentPicks.length > 30) recentPicks.shift();
   session.zen += amount;
   mark({ zen: amount });
   event('zen', best.owner ? monsterName(best.owner) : 'levantado', amount, best.owner);
@@ -227,7 +239,13 @@ function followSession() {
   marks.length = 0;
   pending.clear();
   engagedAt.clear();
+  typeOf.clear();
+  seenMoneyDrops.clear();
+  goneMoney.length = 0;
+  recentPicks.length = 0;
+  wasAlive = false;
   live = null;
+  setTimeout(() => void fetchLive(), 2_000); // que el panel sepa enseguida si hay servidor y cómo rinde la zona
 }
 
 let started = false;
@@ -238,6 +256,5 @@ export function startYield() {
   onZenPicked(onPicked);
   setInterval(() => { followSession(); sample(); }, SAMPLE_MS);
   setInterval(tick, TICK_MS);
-  setTimeout(() => void fetchLive(), 10_000);
   setInterval(() => void fetchLive(), LIVE_MS);
 }

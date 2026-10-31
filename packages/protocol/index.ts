@@ -2,6 +2,12 @@
 
 /** Puerto del servidor local; tiene que coincidir con `host_permissions` del manifest de la extensión. */
 export const SERVER_PORT = 8787;
+/**
+ * Cortes de la ingesta, de adentro hacia afuera: la base (10 s, en el servidor) < el service worker < la página. Cada uno espera más que el de
+ * adentro, para que un envío lento no se tome por fallido y se reenvíe (duplicaría kills y Zen).
+ */
+export const INGEST_TIMEOUT_MS = 15_000;
+export const PAGE_TIMEOUT_MS = 20_000;
 /** Tablas de ClickHouse (base `mubot_slow`, las mismas de mutbot) en las que la extensión puede escribir. */
 export const INGEST_TABLES = ['ticks', 'events'] as const;
 export type IngestTable = (typeof INGEST_TABLES)[number];
@@ -44,3 +50,17 @@ export const MAP_NAMES: Record<number, string> = {
   7: 'Atlans', 8: 'Tarkan', 10: 'Icarus', 33: 'Aida',
 };
 export const mapName = (n: number): string => MAP_NAMES[n] ?? `mapa ${n}`;
+
+/** Distancia en casillas como la cuenta el juego (la mayor de las dos diferencias). */
+export const tileDist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+
+/** 1234 → 1,2k; 3456789 → 3,5M (panel y página). */
+export function compact(n: number): string {
+  if (!Number.isFinite(n)) return '–';
+  const a = Math.abs(n);
+  const f = (v: number, u: string) => `${v.toLocaleString('es-AR', { maximumFractionDigits: Math.abs(v) < 10 ? 1 : 0 })}${u}`;
+  if (a >= 1e9) return f(n / 1e9, 'G');
+  if (a >= 1e6) return f(n / 1e6, 'M');
+  if (a >= 1e3) return f(n / 1e3, 'k');
+  return Math.round(n).toLocaleString('es-AR');
+}

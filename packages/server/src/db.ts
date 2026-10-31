@@ -20,6 +20,11 @@ const DB_NAME = process.env.MUBOT_DB_NAME ?? 'mubot_slow';
 const headers = { 'X-ClickHouse-User': process.env.MUBOT_DB_USER ?? 'mubot', 'X-ClickHouse-Key': process.env.MUBOT_DB_PASSWORD ?? '' };
 
 export const dbConfigured = () => DB_URL !== '';
+/**
+ * Tiene que ser menor que el corte del service worker (INGEST_TIMEOUT_MS en protocol): si el que manda corta antes de que la base termine, reenvía
+ * filas que igual se guardaron y quedan duplicadas.
+ */
+const INSERT_TIMEOUT_MS = 10_000;
 export const dbName = DB_NAME;
 
 /** Consulta de lectura: filas JSONEachRow. Tira si la base no responde o la consulta falla. */
@@ -34,7 +39,7 @@ export async function dbRows<T = Record<string, unknown>>(sql: string, timeoutMs
 }
 
 /** Inserta filas (JSONEachRow); los campos que la tabla no tiene se ignoran. */
-export async function dbInsert(table: string, rows: object[], timeoutMs = 15_000): Promise<void> {
+export async function dbInsert(table: string, rows: object[], timeoutMs = INSERT_TIMEOUT_MS): Promise<void> {
   if (!DB_URL) throw new Error('falta MUBOT_DB_URL (~/.mubot/.env.db)');
   if (!rows.length) return;
   const q = encodeURIComponent(`INSERT INTO ${table} FORMAT JSONEachRow`);

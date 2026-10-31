@@ -2,7 +2,7 @@
  * Página de rendimiento de mutool (la sirve packages/server en http://127.0.0.1:8787). Dónde rinde más el farmeo en Zen y experiencia, por zona de
  * 16×16 casillas y por monstruo, y las sesiones. Todo sale de la API del servidor (/api/zones, /api/monsters, /api/sessions, /api/health).
  */
-import { MIN_MINUTES, type Health, type Monster, type Session, type Zone } from '@mutool/protocol';
+import { MIN_MINUTES, compact, type Health, type Monster, type Session, type Zone } from '@mutool/protocol';
 
 /** Para "el monstruo que más Zen da" hacen falta varios kills. */
 const MIN_KILLS = 20;
@@ -25,16 +25,6 @@ let loadError = '';
 
 // --- formato ---------------------------------------------------------------------------------------------------------------------------------
 
-/** 1234 → 1,2 k; 3456789 → 3,5 M. */
-function compact(n: number): string {
-  if (!Number.isFinite(n)) return '–';
-  const a = Math.abs(n);
-  const f = (v: number, u: string) => `${v.toLocaleString('es-AR', { maximumFractionDigits: v < 10 ? 1 : 0 })} ${u}`;
-  if (a >= 1e9) return f(n / 1e9, 'G');
-  if (a >= 1e6) return f(n / 1e6, 'M');
-  if (a >= 1e3) return f(n / 1e3, 'k');
-  return Math.round(n).toLocaleString('es-AR');
-}
 const minutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${Math.round(m % 60)} min` : `${Math.round(m)} min`);
 const when = (ts: string) => new Date(ts.replace(' ', 'T') + 'Z').toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const netZenH = (z: Zone) => z.zenH - z.potionsH * prefs.potionPrice;
@@ -261,7 +251,7 @@ function monstersSection() {
 }
 
 function sessionsSection() {
-  const s = h('section', {}, h('h2', {}, 'Sesiones'), h('p', { class: 'lede' }, 'Cada carga de la página del juego.'));
+  const s = h('section', {}, h('h2', {}, 'Sesiones'), h('p', { class: 'lede' }, 'Cada entrada al mundo: empieza otra al reconectar o al cambiar de personaje.'));
   if (!data.sessions.length) { s.append(h('p', { class: 'empty' }, 'Sin sesiones en este período.')); return s; }
   s.append(table('sessions', data.sessions, [
     { key: 'start', label: 'Inicio', value: (x) => x.start, cell: (x) => when(x.start) },
@@ -288,9 +278,10 @@ function statusText(): { text: string; err: boolean } {
 function render() {
   const app = document.getElementById('app')!;
   const st = statusText();
-  const theme = h('button', { class: 'theme', type: 'button' }, document.documentElement.dataset.theme === 'dark' ? 'Tema claro' : 'Tema oscuro');
+  // El tema de ahora: el elegido, o el del sistema si no se eligió ninguno.
+  const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  const theme = h('button', { class: 'theme', type: 'button' }, dark ? 'Tema claro' : 'Tema oscuro');
   theme.onclick = () => {
-    const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
     prefs.theme = dark ? 'light' : 'dark';
     document.documentElement.dataset.theme = prefs.theme;
     savePrefs();

@@ -3,6 +3,7 @@
  * haciendo y por qué. Vive en un Shadow DOM: los estilos del juego no lo tocan y los suyos no tocan el juego. Se arrastra del título, se achica
  * con el botón y recuerda posición, tamaño y la campanita.
  */
+import { compact } from '@mutool/protocol';
 import type { PickKind, Status } from '../assistant';
 import { EXT_BUILD, EXT_VERSION } from '../build-info';
 import { CHANGELOG } from '../changelog';
@@ -98,15 +99,6 @@ const CSS = `
 .yclosed .ygrid, .yclosed .yline { display: none; }
 `;
 
-/** 1234 → 1,2k; 3456789 → 3,5M. */
-function compact(n: number): string {
-  const a = Math.abs(n);
-  const f = (v: number, u: string) => `${v.toFixed(v < 10 ? 1 : 0).replace('.', ',')}${u}`;
-  if (a >= 1e9) return f(n / 1e9, 'G');
-  if (a >= 1e6) return f(n / 1e6, 'M');
-  if (a >= 1e3) return f(n / 1e3, 'k');
-  return String(Math.round(n));
-}
 
 function loadPrefs(): Prefs {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Prefs; } catch { return {}; }
@@ -385,6 +377,11 @@ export function mountPanel(deps: PanelDeps) {
     const ses = y.session;
     sessionLine.replaceChildren('Sesión ', el('b', '', `${Math.round(ses.minutes)} min`), ` · ${compact(ses.exp)} exp · ${compact(ses.zen)} zen · ${ses.kills} kills`);
     sessionLine.title = `Por hora en la sesión: ${compact(ses.expH)} exp, ${compact(ses.zenH)} zen, ${compact(ses.potionsH)} pociones`;
+    if (y.server === null) {
+      setText(zoneLine, 'Buscando el servidor local…');
+      zoneLine.title = '';
+      return;
+    }
     if (!y.server) {
       setText(zoneLine, 'Sin servidor local: no se guarda el historial.');
       zoneLine.title = 'bun run server en mu-tools guarda los datos y muestra el ranking de zonas en http://127.0.0.1:8787';

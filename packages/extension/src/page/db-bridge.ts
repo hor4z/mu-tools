@@ -3,9 +3,10 @@
  * `postMessage` al content script `bridge.ts` (mundo aislado), que se los da al service worker `background.ts`, que hace el fetch.
  * Si el bridge no contesta (extensión vieja o sin servidor), todo sigue igual: `bridgeOn()` queda en false y no se anota nada.
  */
+import { PAGE_TIMEOUT_MS } from '@mutool/protocol';
 import { BRIDGE_TAG, type BridgeRequest, type BridgeResponse } from '../bridge-protocol';
 
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = PAGE_TIMEOUT_MS;
 let nextId = 1;
 let ready = false;
 const waiting = new Map<number, (r: BridgeResponse) => void>();

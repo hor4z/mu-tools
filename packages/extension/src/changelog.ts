@@ -4,6 +4,15 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.4',
+    date: '2026-10-31',
+    items: [
+      'Datos más confiables: si la base anda lenta ya no se guardan kills y Zen repetidos, y si el servidor se cae no se pierden los kills de esa tanda.',
+      'Un retiro del baúl ya no se cuenta como Zen levantado.',
+      'El panel dice "Buscando el servidor local…" al entrar en vez de "Sin servidor" mientras pregunta.',
+    ],
+  },
+  {
     version: '0.5.3',
     date: '2026-10-31',
     items: [

@@ -12,6 +12,10 @@ import { live, monsters, sessions, zones } from './queries';
 const MAX_ROWS = 5_000;
 const LEVEL_BAND = 10;
 const WEB_DIR = join(import.meta.dir, '../../web/dist');
+const PORT = Number(process.env.MUTOOL_PORT ?? SERVER_PORT);
+const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+/** Opcional: el id de la extensión (chrome://extensions) para que ninguna otra extensión pueda escribir. Sin él, cualquier chrome-extension://. */
+const EXTENSION_ID = process.env.MUTOOL_EXTENSION_ID ?? '';
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (status: number, error: string) => json({ error }, status);
@@ -68,14 +72,17 @@ function staticFile(pathname: string): Response {
 
 const server = Bun.serve({
   hostname: '127.0.0.1',
-  port: Number(process.env.MUTOOL_PORT ?? SERVER_PORT),
+  port: PORT,
   async fetch(req) {
     const u = new URL(req.url);
+    // DNS rebinding: una página de afuera que resuelve su dominio a 127.0.0.1 llega con su propio Host; solo se atiende el nuestro.
+    if (!LOCAL_HOSTS.has(req.headers.get('host') ?? '')) return fail(403, 'host');
     try {
       if (u.pathname === '/ingest') {
         // Solo el service worker de la extensión: una página cualquiera del navegador no puede escribir acá.
         if (req.method !== 'POST') return fail(405, 'POST');
-        if (!(req.headers.get('origin') ?? '').startsWith('chrome-extension://')) return fail(403, 'solo la extensión');
+        const origin = req.headers.get('origin') ?? '';
+        if (!origin.startsWith('chrome-extension://') || (EXTENSION_ID && origin !== `chrome-extension://${EXTENSION_ID}`)) return fail(403, 'solo la extensión');
         const body = await req.json().catch(() => null);
         if (!validIngest(body)) return fail(400, 'filas inválidas');
         await dbInsert(body.table, body.rows);

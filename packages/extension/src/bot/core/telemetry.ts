@@ -97,20 +97,29 @@ export function trackEvent(kind: string, text = '', num1 = 0, num2 = 0, data: Ro
   });
 }
 
+let flushing = false;
 async function flush() {
-  if (Date.now() < retryAt || !buffer.size) return;
-  for (const [t, rows] of buffer.take()) {
-    try {
-      await dbInsert(t, rows, 4_000);
-      if (warned) log('Datos: la base volvió, sigo mandando.');
-      warned = false;
-      fails = 0;
-    } catch (e) {
-      buffer.restore(t, rows);
-      retryAt = Date.now() + Math.min(120_000, 5_000 * 2 ** fails++);
-      if (!warned) log(`Datos: no pude guardar en la base (${(e as Error).message}); sigo jugando y reintento.`);
-      warned = true;
-      return;
+  if (flushing || Date.now() < retryAt || !buffer.size) return;
+  flushing = true;
+  const batches = buffer.take();
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      const [t, rows] = batches[i]!;
+      try {
+        await dbInsert(t, rows, 4_000);
+        if (warned) log('Datos: la base volvió, sigo mandando.');
+        warned = false;
+        fails = 0;
+      } catch (e) {
+        // Vuelve todo lo que no salió, no solo esta tabla: si no, los eventos de la misma tanda se perdían.
+        for (const [rt, rr] of batches.slice(i)) buffer.restore(rt, rr);
+        retryAt = Date.now() + Math.min(120_000, 5_000 * 2 ** fails++);
+        if (!warned) log(`Datos: no pude guardar en la base (${(e as Error).message}); sigo jugando y reintento.`);
+        warned = true;
+        return;
+      }
     }
+  } finally {
+    flushing = false;
   }
 }

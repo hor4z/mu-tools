@@ -97,9 +97,23 @@ export async function sessions(r: Range): Promise<Session[]> {
   });
 }
 
+/** Cada panel abierto pregunta por minuto: las zonas del mismo rango se reusan un rato en vez de recorrer todo el historial cada vez. */
+const LIVE_CACHE_MS = 30_000;
+const liveCache = new Map<string, { at: number; zones: Promise<Zone[]> }>();
+function cachedZones(r: Range): Promise<Zone[]> {
+  const key = `${r.days}:${r.minLevel}:${r.maxLevel ?? ''}`;
+  const hit = liveCache.get(key);
+  if (hit && Date.now() - hit.at < LIVE_CACHE_MS) return hit.zones;
+  const zs = zones(r);
+  liveCache.set(key, { at: Date.now(), zones: zs });
+  zs.catch(() => liveCache.delete(key));
+  if (liveCache.size > 50) liveCache.clear();
+  return zs;
+}
+
 /** La zona donde está el personaje contra la mejor conocida por Zen/h (para el panel del juego). */
 export async function live(map: number, x: number, y: number, r: Range): Promise<ZoneLive> {
-  const all = (await zones(r)).filter((z) => z.minutes >= MIN_MINUTES && z.kills > 0);
+  const all = (await cachedZones(r)).filter((z) => z.minutes >= MIN_MINUTES && z.kills > 0);
   const cx = Math.floor(x / ZONE_TILES), cy = Math.floor(y / ZONE_TILES);
   const here = all.find((z) => z.map === map && z.cx === cx && z.cy === cy);
   // Por Zen/h; si empatan (zonas sin Zen), por exp/h.
