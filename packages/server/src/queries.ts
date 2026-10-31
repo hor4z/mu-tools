@@ -1,7 +1,7 @@
 /**
  * Las consultas de rendimiento sobre las filas de la extensión (`version LIKE 'mutool-%'`) en `ticks` y `events` de `mubot_slow`:
  *  - el tiempo sale de las fotos de 5 s (`ticks`), por zona de 16×16 casillas;
- *  - la experiencia y el Zen, de los eventos `kill` (num2 = exp, data.zen = Zen que soltó), `zen` (num1 = Zen levantado), `potion` y `death`.
+ *  - la experiencia y el Zen, de los eventos `kill` (num2 = exp), `zen` (num1 = Zen levantado, num2 = monstruo que lo soltó), `potion` y `death`.
  * Las tasas por hora se calculan acá, no en SQL, para que una zona con pocos minutos no dé números absurdos (ver MIN_MINUTES).
  */
 import { MIN_MINUTES, VERSION_PREFIX, mapName, type Monster, type Range, type Session, type Zone, type ZoneLive } from '@mutool/protocol';
@@ -48,13 +48,20 @@ export async function zones(r: Range): Promise<Zone[]> {
 }
 
 export async function monsters(r: Range): Promise<Monster[]> {
+  // El Zen por kill sale del Zen levantado de los drops de cada monstruo (evento zen, num2 = tipo) dividido sus kills: el monto no viene en el drop.
   type Row = { type: number; name: string; kills: number; exp: number; zen: number; ms: number; maps: number[]; lvl: number };
   const rows = await dbRows<Row>(`
-    SELECT toUInt32(num1) AS type, any(text) AS name, count() AS kills, avg(num2) AS exp, avg(JSONExtractUInt(data, 'zen')) AS zen,
-           quantileExactIf(0.5)(JSONExtractUInt(data, 'ms'), JSONExtractUInt(data, 'ms') > 0) AS ms,
-           groupUniqArray(3)(map) AS maps, round(avg(level)) AS lvl
-    FROM events WHERE ${mine} AND ${when(r)} AND kind = 'kill'
-    GROUP BY type ORDER BY kills DESC`);
+    WITH z AS (
+      SELECT toUInt32(num2) AS type, sum(num1) AS zen FROM events WHERE ${mine} AND ${when(r)} AND kind = 'zen' AND num2 > 0 GROUP BY type
+    )
+    SELECT k.type AS type, k.name AS name, k.kills AS kills, k.exp AS exp, z.zen / k.kills AS zen, k.ms AS ms, k.maps AS maps, k.lvl AS lvl
+    FROM (
+      SELECT toUInt32(num1) AS type, any(text) AS name, count() AS kills, avg(num2) AS exp,
+             quantileExactIf(0.5)(JSONExtractUInt(data, 'ms'), JSONExtractUInt(data, 'ms') > 0) AS ms,
+             groupUniqArray(3)(map) AS maps, round(avg(level)) AS lvl
+      FROM events WHERE ${mine} AND ${when(r)} AND kind = 'kill' GROUP BY type
+    ) AS k LEFT JOIN z ON k.type = z.type
+    ORDER BY kills DESC`);
   return rows.map((m) => {
     const seconds = (m.ms || 0) / 1000;
     return {
@@ -66,15 +73,16 @@ export async function monsters(r: Range): Promise<Monster[]> {
 }
 
 export async function sessions(r: Range): Promise<Session[]> {
-  type T = { session: string; start: string; end: string; ticks: number; lvl: number; top_map: number; exp: number };
-  type E = { session: string; zen: number; kills: number };
+  type T = { session: string; start: string; end: string; ticks: number; lvl: number; top_map: number };
+  // La exp sale de los kills, no de exp_total: un reset la vuelve a cero y max − min daba cualquier cosa.
+  type E = { session: string; zen: number; kills: number; exp: number };
   const [t, e] = await Promise.all([
     dbRows<T>(`
       SELECT session, toString(min(ts)) AS start, toString(max(ts)) AS end, count() AS ticks, argMax(level, ts) AS lvl,
-             topK(1)(map)[1] AS top_map, max(exp_total) - min(exp_total) AS exp
+             topK(1)(map)[1] AS top_map
       FROM ticks WHERE ${mine} AND ${when(r)} GROUP BY session ORDER BY start DESC LIMIT 60`),
     dbRows<E>(`
-      SELECT session, sumIf(num1, kind = 'zen') AS zen, countIf(kind = 'kill') AS kills
+      SELECT session, sumIf(num1, kind = 'zen') AS zen, countIf(kind = 'kill') AS kills, sumIf(num2, kind = 'kill') AS exp
       FROM events WHERE ${mine} AND ${when(r)} AND kind IN ('zen', 'kill') GROUP BY session`),
   ]);
   const byId = new Map(e.map((x) => [x.session, x]));
@@ -84,7 +92,7 @@ export async function sessions(r: Range): Promise<Session[]> {
     const zen = x?.zen ?? 0;
     return {
       session: s.session, start: s.start, end: s.end, minutes, level: s.lvl, mapName: mapName(s.top_map),
-      exp: s.exp, zen, kills: x?.kills ?? 0, expH: perHour(s.exp, minutes), zenH: perHour(zen, minutes),
+      exp: x?.exp ?? 0, zen, kills: x?.kills ?? 0, expH: perHour(x?.exp ?? 0, minutes), zenH: perHour(zen, minutes),
     };
   });
 }

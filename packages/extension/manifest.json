@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "mutool",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Asistente para MU Slow dentro de la página del juego: auto attack con el skill elegido, levantar Zen, joyas y excelentes, reparto de puntos y rendimiento de zen y experiencia (con historial si corre el servidor local).",
   "content_scripts": [
     {

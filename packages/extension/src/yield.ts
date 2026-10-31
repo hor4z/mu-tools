@@ -2,11 +2,12 @@
  * Rendimiento: cuánta experiencia y Zen da el farmeo, por zona y por monstruo. Lleva la cuenta de la sesión para el panel (funciona sin servidor) y
  * anota en ClickHouse por la telemetría (bot/core/telemetry.ts → bridge → packages/server):
  *  - `ticks` cada 5 s: dónde está, nivel, exp total, si el automático está prendido (`mode` assist/manual) y si pelea (`phase` fight).
- *  - `kill`: num1 = tipo de monstruo, num2 = su experiencia (ExperienceGained trae el id del muerto), data = {ms, zen}: cuánto tardó desde que fue
- *    el objetivo y el Zen que soltó (el drop de Zen a ≤2 casillas del monstruo, de 1,5 s antes a 2,5 s después: el drop suele llegar antes que la
- *    experiencia). Se anota en la casilla del
- *    personaje, como los ticks: así el tiempo y los kills de una zona salen del mismo lugar.
- *  - `zen`: num1 = el Zen que entró al levantar. `potion`: num1 = 0 vida, 1 maná. `death`: el personaje murió.
+ *  - `kill`: num1 = tipo de monstruo, num2 = su experiencia (ExperienceGained trae el id del muerto), data = {ms}: cuánto tardó desde que fue el
+ *    objetivo. Se anota en la casilla del personaje, como los ticks: así el tiempo y los kills de una zona salen del mismo lugar.
+ *  - `zen`: num1 = el Zen que entró al levantar, num2 = el monstruo que lo soltó (0 si no se sabe). En este server el Zen cae como ítem y el monto
+ *    no viene en el drop: se sabe recién al levantarlo. Cada drop de Zen queda anotado con el kill más cercano (≤2 casillas, de 1,5 s antes a
+ *    2,5 s después: el drop suele llegar antes que la experiencia), y al levantar se busca el drop de Zen más cercano al personaje.
+ *  - `potion`: num1 = 0 vida, 1 maná. `death`: el personaje murió.
  */
 import type { ZoneLive } from '@mutool/protocol';
 import { ExperienceGainedPacket } from './bot/packets';
@@ -27,20 +28,24 @@ const ZEN_DROP_TILES = 2;
 export const RECENT_MS = 10 * 60_000;
 
 /** x/y: dónde estaba el monstruo (para el Zen que suelta); me: dónde estaba el personaje (la zona del kill). */
-type Kill = { id: number; type: number; x: number; y: number; me: { x: number; y: number }; at: number; exp: number; zen: number; ms: number };
+type Kill = { id: number; type: number; x: number; y: number; me: { x: number; y: number }; at: number; exp: number; ms: number };
+/** Un drop de Zen en el piso o recién ido; owner: el tipo de monstruo que lo soltó (0 si no se sabe). */
+type MoneyDrop = { x: number; y: number; at: number; owner: number; goneAt?: number; picked?: boolean };
 type Mark = { at: number; exp: number; zen: number; kills: number; potions: number };
 
 const pending = new Map<number, Kill>();
 /** Desde cuándo cada monstruo es el objetivo del asistente (para los segundos por kill). */
 const engagedAt = new Map<number, number>();
 const typeOf = new Map<number, number>();
-/** Drops de Zen ya vistos (id → cuánto y cuándo). Se borran al salir de `drops`: el server reusa los ids. */
-const seenMoneyDrops = new Map<number, { amount: number; at: number; x: number; y: number; taken: boolean }>();
+/** Drops de Zen en el piso (id → drop). Se pasan a `goneMoney` al salir de `drops`: el server reusa los ids. */
+const seenMoneyDrops = new Map<number, MoneyDrop>();
 /** El drop de Zen llega antes que ExperienceGained: un kill nuevo mira los drops de hasta este tiempo atrás. */
 const DROP_BEFORE_KILL_MS = 1_500;
-/** El Zen de los drops que se fueron del piso hace poco (levantados o no): el tope de lo que puede entrar al levantar. */
-const goneMoney: { amount: number; at: number }[] = [];
-const MONEY_MEMORY_MS = 60_000;
+/** Drops de Zen que se fueron del piso hace poco: el que se levantó puede irse un instante antes de que llegue el Zen. */
+const goneMoney: MoneyDrop[] = [];
+const GONE_MEMORY_MS = 3_000;
+/** Al levantar, el drop tiene que estar a esta distancia del personaje: si no hay ninguno, el Zen vino de otro lado (baúl, trade). */
+const PICK_TILES = 3;
 /** Lo que pasó, en orden, para la ventana reciente y la exp de 1 min. */
 const marks: Mark[] = [];
 const session = { since: 0, exp: 0, zen: 0, kills: 0, potions: 0 };
@@ -79,10 +84,8 @@ function onExp(raw: unknown) {
     const now = Date.now();
     const at = posOf(id);
     const since = engagedAt.get(id);
-    k = { id, type, x: at?.x ?? world.x, y: at?.y ?? world.y, me: myTile(), at: now, exp: 0, zen: 0, ms: since ? now - since : 0 };
-    for (const d of seenMoneyDrops.values()) {
-      if (!d.taken && now - d.at <= DROP_BEFORE_KILL_MS && near(k, d)) { d.taken = true; k.zen += d.amount; }
-    }
+    k = { id, type, x: at?.x ?? world.x, y: at?.y ?? world.y, me: myTile(), at: now, exp: 0, ms: since ? now - since : 0 };
+    for (const d of seenMoneyDrops.values()) if (!d.owner && now - d.at <= DROP_BEFORE_KILL_MS && near(k, d)) d.owner = type;
     pending.set(id, k);
     engagedAt.delete(id);
     session.kills++;
@@ -96,7 +99,7 @@ function settle(id: number) {
   const k = pending.get(id);
   pending.delete(id);
   typeOf.delete(id);
-  if (k) event('kill', monsterName(k.type), k.type, k.exp, { ms: k.ms, zen: k.zen }, k.me);
+  if (k) event('kill', monsterName(k.type), k.type, k.exp, { ms: k.ms }, k.me);
 }
 
 let wasAlive = false;
@@ -113,16 +116,14 @@ function sample() {
   for (const [id, m] of seenMoneyDrops) {
     if (drops.get(id)?.isMoney) continue;
     seenMoneyDrops.delete(id);
-    goneMoney.push({ amount: m.amount, at: now });
+    if (!m.picked) goneMoney.push({ ...m, goneAt: now });
   }
-  while (goneMoney.length && now - goneMoney[0]!.at > MONEY_MEMORY_MS) goneMoney.shift();
+  while (goneMoney.length && now - goneMoney[0]!.goneAt! > GONE_MEMORY_MS) goneMoney.shift();
   for (const d of drops.values()) {
     if (!d.isMoney || seenMoneyDrops.has(d.id)) continue;
-    const seen = { amount: d.amount ?? 0, at: now, x: d.x, y: d.y, taken: false };
-    seenMoneyDrops.set(d.id, seen);
     let best: Kill | null = null;
     for (const k of pending.values()) if (near(k, d) && (!best || k.at > best.at)) best = k;
-    if (best) { best.zen += seen.amount; seen.taken = true; }
+    seenMoneyDrops.set(d.id, { x: d.x, y: d.y, at: now, owner: best?.type ?? 0 });
   }
 }
 
@@ -196,27 +197,32 @@ async function fetchLive() {
   }
 }
 
-/**
- * Zen levantado. La cuenta sale de la diferencia del total de Zen, y otras cosas lo cambian sin avisar (baúl, trade, reparar): la diferencia se
- * recorta al drop de Zen más grande que se fue del piso recién; si no se fue ninguno, no fue un drop.
- */
-function onPicked(delta: number) {
-  const now = Date.now();
+/** Zen levantado: se le atribuye al drop de Zen más cercano (en el piso o recién ido). Sin ninguno cerca no fue un drop y no cuenta. */
+function onPicked(amount: number) {
   sample(); // que el drop recién levantado ya figure como ido
-  const top = Math.max(0, ...goneMoney.filter((m) => now - m.at <= MONEY_MEMORY_MS).map((m) => m.amount), ...[...seenMoneyDrops.values()].map((m) => m.amount));
-  const amount = Math.min(delta, top);
-  if (amount <= 0) return;
+  const me = myTile();
+  const dist = (d: MoneyDrop) => Math.max(Math.abs(d.x - me.x), Math.abs(d.y - me.y));
+  let best: MoneyDrop | null = null;
+  for (const d of [...goneMoney, ...seenMoneyDrops.values()]) if (!d.picked && dist(d) <= PICK_TILES && (!best || dist(d) < dist(best))) best = d;
+  if (!best) return;
+  best.picked = true; // un drop se levanta una vez
   session.zen += amount;
   mark({ zen: amount });
-  event('zen', 'levantado', amount);
+  event('zen', best.owner ? monsterName(best.owner) : 'levantado', amount, best.owner);
 }
 
-/** Entrar al mundo (de nuevo, o con otro personaje) empieza otra sesión: no se mezclan totales ni el tiempo desconectado. */
-let sessionOf = 0;
+/**
+ * Una sesión nueva al volver a entrar después de salir (desconexión, vuelta a elegir personaje) o con otro personaje: no se mezclan totales ni el
+ * tiempo desconectado. El server repite CharacterInformation estando adentro (al viajar, por ejemplo) y eso no corta la sesión.
+ */
+let sessionChar: string | null = null;
+let wentOut = false;
 function followSession() {
-  if (!bot.inGameAt || bot.inGameAt === sessionOf) return;
-  if (sessionOf) newSession();
-  sessionOf = bot.inGameAt;
+  if (!bot.inGameAt) { if (sessionChar !== null) wentOut = true; return; }
+  if (sessionChar === bot.charName && !wentOut) return;
+  if (sessionChar !== null) newSession();
+  sessionChar = bot.charName;
+  wentOut = false;
   Object.assign(session, { since: Date.now(), exp: 0, zen: 0, kills: 0, potions: 0 });
   marks.length = 0;
   pending.clear();

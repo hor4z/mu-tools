@@ -21,7 +21,7 @@ export type Zone = {
 };
 export type Monster = {
   type: number; name: string; kills: number;
-  /** Promedio por kill. */
+  /** Promedio por kill. El Zen es el levantado de sus drops (el monto no viene en el drop), así que depende de levantar el Zen. */
   exp: number; zen: number;
   /** Mediana de segundos desde que fue el objetivo hasta que murió (0 si no hay datos). */
   seconds: number;

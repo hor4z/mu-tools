@@ -4,12 +4,20 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.3',
+    date: '2026-10-31',
+    items: [
+      'Arreglado: la 0.5.2 no contaba el Zen levantado (el monto no viene en el drop de este server y lo descartaba).',
+      'El Zen por monstruo sale del Zen que levantás de sus drops; el baúl o un trade siguen sin contar (no hay un drop de Zen al lado).',
+      'La sesión ya no se corta al viajar entre mapas: solo al reconectar o cambiar de personaje.',
+    ],
+  },
+  {
     version: '0.5.2',
     date: '2026-10-31',
     items: [
       'Rendimiento más exacto: "últimos 10 min" ya no arrastra lo viejo si te quedás quieto, el Zen del baúl o de un trade no cuenta como levantado y cada entrada al mundo es una sesión nueva.',
       'La mejor zona que te sugiere es de tu nivel (±10), no una que se farmeó con un personaje mucho más alto.',
-      'Zen por monstruo: ahora se cuenta (el drop de Zen llega antes que la experiencia del kill y antes se perdía).',
     ],
   },
   {
