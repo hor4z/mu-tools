@@ -4,6 +4,13 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.1',
+    date: '2026-10-31',
+    items: [
+      'El panel ya no se agranda y se achica solo: el estado, el drop a la vista y el rendimiento ocupan siempre un renglón (el texto completo, con el mouse encima).',
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-10-31',
     items: [

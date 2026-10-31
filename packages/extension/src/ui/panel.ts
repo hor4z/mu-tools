@@ -68,11 +68,12 @@ const CSS = `
 .chip.on { background: #3a2f17; border-color: #d4a947; color: #f6d47c; }
 .skills { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .skills .chip { font-weight: 500; font-size: 11px; padding: 5px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.status { padding: 6px 8px; border-radius: 6px; background: #221d16; color: #cfc6b3; min-height: 16px; }
+/* Alto fijo en las líneas que cambian solas (estado, drop, rendimiento): si crecían y se achicaban con el texto, todo el panel saltaba. */
+.status { padding: 6px 8px; border-radius: 6px; background: #221d16; color: #cfc6b3; height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status.warn { background: #3a2a10; color: #f0c06a; }
-.status.err { background: #3a1616; color: #ff9b8f; }
-.loot { display: flex; gap: 6px; align-items: center; color: #f6d47c; font-weight: 600; }
-.loot[hidden] { display: none; }
+.status.err { background: #3a1616; color: #ff9b8f; height: auto; white-space: normal; } /* un error se lee entero: dura unos segundos */
+.loot { height: 16px; color: #f6d47c; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loot.none { color: #6f6656; font-weight: 400; }
 .btn { all: unset; cursor: pointer; text-align: center; padding: 6px 0; border-radius: 6px; background: #3b3328; color: #f1e9d8; font-weight: 600; }
 .btn:hover:not(:disabled) { background: #4d4232; }
 .foot { display: flex; justify-content: space-between; align-items: center; margin-top: -2px; }
@@ -92,7 +93,7 @@ const CSS = `
 .ynum { font-size: 15px; font-weight: 700; color: #f6d47c; font-variant-numeric: tabular-nums; }
 .ynum.exp { color: #9fd3ff; }
 .ylab { color: #9d927d; font-size: 10px; }
-.yline { margin-top: 5px; color: #9d927d; font-size: 11px; }
+.yline { margin-top: 5px; color: #9d927d; font-size: 11px; height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .yline b { color: #cfc6b3; font-weight: 600; }
 .yclosed .ygrid, .yclosed .yline { display: none; }
 `;
@@ -350,9 +351,12 @@ export function mountPanel(deps: PanelDeps) {
 
     const st = statusText(s);
     setText(statusLine, st.text);
+    statusLine.title = st.text;
     statusLine.className = `status${st.cls ? ` ${st.cls}` : ''}`;
 
-    lootLine.hidden = !s.loot;
+    // La línea del drop queda siempre (vacía, apagada): que aparezca y desaparezca con cada drop movía todo el panel.
+    lootLine.classList.toggle('none', !s.loot);
+    if (!s.loot) setText(lootLine, 'Sin drops a la vista');
     if (s.loot) {
       setText(lootLine, `${s.loot.kind === 'zen' ? '🪙' : '💎'} ${s.loot.name} · ${s.loot.dist === 0 ? 'acá' : `${s.loot.dist} al ${s.loot.dir}`}`);
       if (s.loot.kind !== 'zen' && s.loot.id !== lastAlertId) { lastAlertId = s.loot.id; if (prefs.sound) chime(); }
@@ -386,11 +390,11 @@ export function mountPanel(deps: PanelDeps) {
       zoneLine.title = 'bun run server en mu-tools guarda los datos y muestra el ranking de zonas en http://127.0.0.1:8787';
       return;
     }
-    zoneLine.title = 'Promedios guardados (últimos 14 días) en http://127.0.0.1:8787';
     const z = y.zone;
     const here = z?.here ? `Esta zona ${compact(z.here.zenH)} zen/h` : 'Zona nueva';
     const best = z?.best ? ` · mejor: ${z.best.name} ${compact(z.best.zenH)}` : '';
     setText(zoneLine, here + best);
+    zoneLine.title = `${here + best}\nPromedios guardados (últimos 14 días) en http://127.0.0.1:8787`;
   }
 
   if (prefs.roam !== undefined) deps.setAssist({ roam: prefs.roam });
