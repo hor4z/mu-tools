@@ -3,7 +3,9 @@
  * anota en ClickHouse por la telemetría (bot/core/telemetry.ts → bridge → packages/server):
  *  - `ticks` cada 5 s: dónde está, nivel, exp total, si el automático está prendido (`mode` assist/manual) y si pelea (`phase` fight).
  *  - `kill`: num1 = tipo de monstruo, num2 = su experiencia (ExperienceGained trae el id del muerto), data = {ms, zen}: cuánto tardó desde que fue
- *    el objetivo y el Zen que soltó (el drop de Zen que cae a ≤2 casillas en los 2,5 s siguientes).
+ *    el objetivo y el Zen que soltó (el drop de Zen a ≤2 casillas del monstruo, de 1,5 s antes a 2,5 s después: el drop suele llegar antes que la
+ *    experiencia). Se anota en la casilla del
+ *    personaje, como los ticks: así el tiempo y los kills de una zona salen del mismo lugar.
  *  - `zen`: num1 = el Zen que entró al levantar. `potion`: num1 = 0 vida, 1 maná. `death`: el personaje murió.
  */
 import type { ZoneLive } from '@mutool/protocol';
@@ -12,7 +14,7 @@ import { EventBus } from './bot/net/eventBus';
 import { drops } from './bot/core/loot-state';
 import { mapName } from './bot/core/panel-logic';
 import { assist, bot, monsterName, world } from './bot/core/state';
-import { track } from './bot/core/telemetry';
+import { newSession, track } from './bot/core/telemetry';
 import { onZenPicked } from './bot/core/world';
 import { bridgeGet, bridgeOn } from './page/db-bridge';
 
@@ -24,24 +26,35 @@ const ZEN_DROP_TILES = 2;
 /** Ventana de "ahora" del panel. */
 export const RECENT_MS = 10 * 60_000;
 
-type Kill = { id: number; type: number; x: number; y: number; at: number; exp: number; zen: number; ms: number };
+/** x/y: dónde estaba el monstruo (para el Zen que suelta); me: dónde estaba el personaje (la zona del kill). */
+type Kill = { id: number; type: number; x: number; y: number; me: { x: number; y: number }; at: number; exp: number; zen: number; ms: number };
 type Mark = { at: number; exp: number; zen: number; kills: number; potions: number };
 
 const pending = new Map<number, Kill>();
 /** Desde cuándo cada monstruo es el objetivo del asistente (para los segundos por kill). */
 const engagedAt = new Map<number, number>();
 const typeOf = new Map<number, number>();
-const seenMoneyDrops = new Set<number>();
+/** Drops de Zen ya vistos (id → cuánto y cuándo). Se borran al salir de `drops`: el server reusa los ids. */
+const seenMoneyDrops = new Map<number, { amount: number; at: number; x: number; y: number; taken: boolean }>();
+/** El drop de Zen llega antes que ExperienceGained: un kill nuevo mira los drops de hasta este tiempo atrás. */
+const DROP_BEFORE_KILL_MS = 1_500;
+/** El Zen de los drops que se fueron del piso hace poco (levantados o no): el tope de lo que puede entrar al levantar. */
+const goneMoney: { amount: number; at: number }[] = [];
+const MONEY_MEMORY_MS = 60_000;
 /** Lo que pasó, en orden, para la ventana reciente y la exp de 1 min. */
 const marks: Mark[] = [];
 const session = { since: 0, exp: 0, zen: 0, kills: 0, potions: 0 };
 
+function prune(now: number) {
+  while (marks.length && now - marks[0]!.at > RECENT_MS) marks.shift();
+}
 function mark(m: Partial<Mark>) {
   const now = Date.now();
   marks.push({ at: now, exp: 0, zen: 0, kills: 0, potions: 0, ...m });
-  while (marks.length && now - marks[0]!.at > RECENT_MS) marks.shift();
+  prune(now);
 }
 
+const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= ZEN_DROP_TILES;
 const posOf = (id: number) => assist.posOf?.(id) ?? world.npcs.get(id) ?? null;
 const myTile = () => assist.here?.() ?? { x: world.x, y: world.y };
 
@@ -66,7 +79,10 @@ function onExp(raw: unknown) {
     const now = Date.now();
     const at = posOf(id);
     const since = engagedAt.get(id);
-    k = { id, type, x: at?.x ?? world.x, y: at?.y ?? world.y, at: now, exp: 0, zen: 0, ms: since ? now - since : 0 };
+    k = { id, type, x: at?.x ?? world.x, y: at?.y ?? world.y, me: myTile(), at: now, exp: 0, zen: 0, ms: since ? now - since : 0 };
+    for (const d of seenMoneyDrops.values()) {
+      if (!d.taken && now - d.at <= DROP_BEFORE_KILL_MS && near(k, d)) { d.taken = true; k.zen += d.amount; }
+    }
     pending.set(id, k);
     engagedAt.delete(id);
     session.kills++;
@@ -80,7 +96,7 @@ function settle(id: number) {
   const k = pending.get(id);
   pending.delete(id);
   typeOf.delete(id);
-  if (k) event('kill', monsterName(k.type), k.type, k.exp, { ms: k.ms, zen: k.zen }, k);
+  if (k) event('kill', monsterName(k.type), k.type, k.exp, { ms: k.ms, zen: k.zen }, k.me);
 }
 
 let wasAlive = false;
@@ -94,16 +110,20 @@ function sample() {
   for (const n of world.npcs.values()) typeOf.set(n.id, n.type);
   if (assist.enabled && assist.target && !engagedAt.has(assist.target)) engagedAt.set(assist.target, now);
   for (const [id, at] of engagedAt) if (now - at > 120_000) engagedAt.delete(id);
+  for (const [id, m] of seenMoneyDrops) {
+    if (drops.get(id)?.isMoney) continue;
+    seenMoneyDrops.delete(id);
+    goneMoney.push({ amount: m.amount, at: now });
+  }
+  while (goneMoney.length && now - goneMoney[0]!.at > MONEY_MEMORY_MS) goneMoney.shift();
   for (const d of drops.values()) {
     if (!d.isMoney || seenMoneyDrops.has(d.id)) continue;
-    seenMoneyDrops.add(d.id);
+    const seen = { amount: d.amount ?? 0, at: now, x: d.x, y: d.y, taken: false };
+    seenMoneyDrops.set(d.id, seen);
     let best: Kill | null = null;
-    for (const k of pending.values()) {
-      if (Math.max(Math.abs(k.x - d.x), Math.abs(k.y - d.y)) <= ZEN_DROP_TILES && (!best || k.at > best.at)) best = k;
-    }
-    if (best) best.zen += d.amount ?? 0;
+    for (const k of pending.values()) if (near(k, d) && (!best || k.at > best.at)) best = k;
+    if (best) { best.zen += seen.amount; seen.taken = true; }
   }
-  if (seenMoneyDrops.size > 500) seenMoneyDrops.clear();
 }
 
 /** Exp de los últimos 60 s, por minuto (la columna exp_min_1m de ticks). */
@@ -151,6 +171,7 @@ function rates(minutes: number, exp: number, zen: number, kills: number, potions
 export function yieldSummary(): YieldSummary {
   const now = Date.now();
   const since = session.since || now;
+  prune(now);
   const r = { exp: 0, zen: 0, kills: 0, potions: 0 };
   for (const m of marks) { r.exp += m.exp; r.zen += m.zen; r.kills += m.kills; r.potions += m.potions; }
   const recentMin = Math.min(RECENT_MS, now - since) / 60_000;
@@ -175,17 +196,41 @@ async function fetchLive() {
   }
 }
 
+/**
+ * Zen levantado. La cuenta sale de la diferencia del total de Zen, y otras cosas lo cambian sin avisar (baúl, trade, reparar): la diferencia se
+ * recorta al drop de Zen más grande que se fue del piso recién; si no se fue ninguno, no fue un drop.
+ */
+function onPicked(delta: number) {
+  const now = Date.now();
+  sample(); // que el drop recién levantado ya figure como ido
+  const top = Math.max(0, ...goneMoney.filter((m) => now - m.at <= MONEY_MEMORY_MS).map((m) => m.amount), ...[...seenMoneyDrops.values()].map((m) => m.amount));
+  const amount = Math.min(delta, top);
+  if (amount <= 0) return;
+  session.zen += amount;
+  mark({ zen: amount });
+  event('zen', 'levantado', amount);
+}
+
+/** Entrar al mundo (de nuevo, o con otro personaje) empieza otra sesión: no se mezclan totales ni el tiempo desconectado. */
+let sessionOf = 0;
+function followSession() {
+  if (!bot.inGameAt || bot.inGameAt === sessionOf) return;
+  if (sessionOf) newSession();
+  sessionOf = bot.inGameAt;
+  Object.assign(session, { since: Date.now(), exp: 0, zen: 0, kills: 0, potions: 0 });
+  marks.length = 0;
+  pending.clear();
+  engagedAt.clear();
+  live = null;
+}
+
 let started = false;
 export function startYield() {
   if (started) return;
   started = true;
   EventBus.on('ExperienceGained', onExp);
-  onZenPicked((amount) => {
-    session.zen += amount;
-    mark({ zen: amount });
-    event('zen', 'levantado', amount);
-  });
-  setInterval(() => { if (bot.inGameAt && !session.since) session.since = Date.now(); sample(); }, SAMPLE_MS);
+  onZenPicked(onPicked);
+  setInterval(() => { followSession(); sample(); }, SAMPLE_MS);
   setInterval(tick, TICK_MS);
   setTimeout(() => void fetchLive(), 10_000);
   setInterval(() => void fetchLive(), LIVE_MS);

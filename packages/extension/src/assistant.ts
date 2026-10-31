@@ -210,7 +210,7 @@ export function startAssistant(deps: Io) {
   io = deps;
   if (started) return;
   started = true;
-  assist.press = (key) => { notePotion(key); io?.press(key); };
+  assist.press = (key) => { if (!io) return; notePotion(key); io.press(key); };
   assist.face = (x, y) => io?.face(x, y);
   assist.cast = (id) => io?.cast(id) ?? false;
   assist.alive = (id) => io?.alive(id) ?? true;

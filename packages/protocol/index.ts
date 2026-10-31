@@ -32,5 +32,15 @@ export type Monster = {
 export type Session = { session: string; start: string; end: string; minutes: number; level: number; mapName: string; exp: number; zen: number; kills: number; expH: number; zenH: number };
 export type ZoneLive = { here: { name: string; expH: number; zenH: number; minutes: number } | null; best: { name: string; expH: number; zenH: number } | null };
 export type Health = { db: boolean; error?: string; rows?: { ticks: number; events: number } };
-/** Filtros de la API: días hacia atrás y nivel mínimo del personaje en las filas. */
-export type Range = { days: number; minLevel: number };
+/** Filtros de la API: días hacia atrás y nivel del personaje en las filas (maxLevel sin tope si falta). */
+export type Range = { days: number; minLevel: number; maxLevel?: number };
+
+/** Menos minutos que esto en una zona no alcanzan para comparar por hora (servidor y página). */
+export const MIN_MINUTES = 3;
+
+/** Índices de mapa del 0.97d. */
+export const MAP_NAMES: Record<number, string> = {
+  0: 'Lorencia', 1: 'Dungeon', 2: 'Devias', 3: 'Noria', 4: 'Lost Tower', 6: 'Arena',
+  7: 'Atlans', 8: 'Tarkan', 10: 'Icarus', 33: 'Aida',
+};
+export const mapName = (n: number): string => MAP_NAMES[n] ?? `mapa ${n}`;

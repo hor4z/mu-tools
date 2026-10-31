@@ -2,10 +2,8 @@
  * Página de rendimiento de mutool (la sirve packages/server en http://127.0.0.1:8787). Dónde rinde más el farmeo en Zen y experiencia, por zona de
  * 16×16 casillas y por monstruo, y las sesiones. Todo sale de la API del servidor (/api/zones, /api/monsters, /api/sessions, /api/health).
  */
-import type { Health, Monster, Session, Zone } from '@mutool/protocol';
+import { MIN_MINUTES, type Health, type Monster, type Session, type Zone } from '@mutool/protocol';
 
-/** Menos minutos que esto en una zona no alcanzan para comparar por hora (igual que el servidor). */
-const MIN_MINUTES = 3;
 /** Para "el monstruo que más Zen da" hacen falta varios kills. */
 const MIN_KILLS = 20;
 const DAYS = [1, 7, 14, 30, 90];
@@ -141,7 +139,7 @@ function heatmaps(zones: Zone[]) {
   const value = (z: Zone) => (metric === 'zen' ? z.zenH : z.expH);
   const max = Math.max(0, ...zones.filter((z) => z.minutes >= MIN_MINUTES).map(value));
   const byMap = new Map<number, Zone[]>();
-  for (const z of data.zones) byMap.set(z.map, [...(byMap.get(z.map) ?? []), z]);
+  for (const z of zones) byMap.set(z.map, [...(byMap.get(z.map) ?? []), z]);
   // Solo los mapas con alguna zona que se pueda comparar; el mejor mapa primero.
   const bestOf = (list: Zone[]) => Math.max(0, ...list.filter((z) => z.minutes >= MIN_MINUTES).map(value));
   for (const [map, list] of byMap) if (!list.some((z) => z.minutes >= MIN_MINUTES)) byMap.delete(map);
@@ -227,7 +225,8 @@ function zonesSection() {
   const s = h('section', {}, h('h2', {}, 'Zonas'),
     h('p', { class: 'lede' }, `Cuadros de 16×16 casillas, con al menos ${MIN_MINUTES} minutos jugados. El Zen es el que levantaste; las pociones, las que tomó el asistente.`));
   if (!data.zones.length) { s.append(h('p', { class: 'empty' }, 'Todavía no hay datos: jugá con la extensión y el servidor prendidos.')); return s; }
-  s.append(...heatmaps(ok));
+  // El mapa también muestra (en gris) las zonas con kills o Zen pero pocos minutos; la tabla, solo las comparables.
+  s.append(...heatmaps(data.zones.filter((z) => z.kills > 0 || z.zen > 0)));
   const cols: Col<Zone>[] = [
     { key: 'name', label: 'Zona', value: (z) => z.name, cell: (z) => h('span', {}, z.name, z.monsters[0] ? h('span', { class: 'tag' }, z.monsters.join(' · ')) : '') },
     { key: 'zenH', label: 'Zen/h', value: (z) => z.zenH, bar: '--zen' },

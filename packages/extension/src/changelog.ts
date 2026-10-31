@@ -4,6 +4,15 @@
  */
 export const CHANGELOG: { version: string; date: string; items: string[] }[] = [
   {
+    version: '0.5.2',
+    date: '2026-10-31',
+    items: [
+      'Rendimiento más exacto: "últimos 10 min" ya no arrastra lo viejo si te quedás quieto, el Zen del baúl o de un trade no cuenta como levantado y cada entrada al mundo es una sesión nueva.',
+      'La mejor zona que te sugiere es de tu nivel (±10), no una que se farmeó con un personaje mucho más alto.',
+      'Zen por monstruo: ahora se cuenta (el drop de Zen llega antes que la experiencia del kill y antes se perdía).',
+    ],
+  },
+  {
     version: '0.5.1',
     date: '2026-10-31',
     items: [

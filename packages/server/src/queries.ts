@@ -4,17 +4,14 @@
  *  - la experiencia y el Zen, de los eventos `kill` (num2 = exp, data.zen = Zen que soltó), `zen` (num1 = Zen levantado), `potion` y `death`.
  * Las tasas por hora se calculan acá, no en SQL, para que una zona con pocos minutos no dé números absurdos (ver MIN_MINUTES).
  */
-import { VERSION_PREFIX, type Monster, type Range, type Session, type Zone, type ZoneLive } from '@mutool/protocol';
-import { mapName } from '../../extension/src/bot/core/panel-logic';
+import { MIN_MINUTES, VERSION_PREFIX, mapName, type Monster, type Range, type Session, type Zone, type ZoneLive } from '@mutool/protocol';
 import { dbRows } from './db';
 
 const TICK_MIN = 5 / 60;
-/** Menos que esto en una zona no alcanza para comparar por hora. */
-export const MIN_MINUTES = 3;
 const ZONE_TILES = 16;
 
 const mine = `version LIKE '${VERSION_PREFIX}%'`;
-const when = (r: Range) => `ts > now() - INTERVAL ${r.days} DAY AND level >= ${r.minLevel}`;
+const when = (r: Range) => `ts > now() - INTERVAL ${r.days} DAY AND level >= ${r.minLevel}${r.maxLevel != null ? ` AND level <= ${r.maxLevel}` : ''}`;
 const perHour = (v: number, minutes: number) => (minutes > 0 ? (v * 60) / minutes : 0);
 /** Nombre corto de una zona: mapa y su cuadro (las coordenadas del centro, como se ven en el juego). */
 const zoneName = (map: number, cx: number, cy: number) => `${mapName(map)} ${cx * ZONE_TILES + 8},${cy * ZONE_TILES + 8}`;

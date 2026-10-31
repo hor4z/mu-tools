@@ -27,8 +27,16 @@ export async function queryDb<T = Record<string, unknown>>(sql: string): Promise
   try { return await dbRows<T>(sql, 5_000); } catch { return []; }
 }
 
-/** Una sesión = una carga de la página del juego. */
-export const SESSION = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+/** Una sesión = una entrada al mundo (src/yield.ts llama a `newSession` al volver a entrar o cambiar de personaje). */
+const sessionId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export let SESSION = sessionId();
+export function newSession() { SESSION = sessionId(); }
+
+/**
+ * En la extensión solo salen los eventos del rendimiento (src/yield.ts). Los demás `trackEvent` del núcleo (decide, monster_seen, drop…) son de
+ * mutbot: acá ensuciarían la tabla compartida y nadie los consulta.
+ */
+const EVENT_KINDS = new Set(['kill', 'zen', 'potion', 'death']);
 
 /** Filas pendientes por tabla, con tope: al pasarse se descartan las más viejas. */
 export class RowBuffer {
@@ -75,7 +83,9 @@ export const chTime = (ms: number) => new Date(ms).toISOString().replace('T', ' 
 /** Anotar una fila (con ts, personaje y sesión). */
 export function track(t: Table, row: Row, now = Date.now()) {
   if (!telemetryOn()) return;
-  buffer.push(t, { ts: chTime(now), char: bot.charName, ...(t === 'players_seen' ? {} : { session: SESSION, version: VERSION }), ...row });
+  // players_seen no lleva version y el servidor no la acepta.
+  if (t === 'players_seen' || (t === 'events' && !EVENT_KINDS.has(String(row.kind)))) return;
+  buffer.push(t, { ts: chTime(now), char: bot.charName, session: SESSION, version: VERSION, ...row });
   timer ??= setInterval(() => void flush(), FLUSH_MS);
 }
 

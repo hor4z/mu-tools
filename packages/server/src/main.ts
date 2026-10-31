@@ -10,6 +10,7 @@ import { dbConfigured, dbInsert, dbName, dbRows } from './db';
 import { live, monsters, sessions, zones } from './queries';
 
 const MAX_ROWS = 5_000;
+const LEVEL_BAND = 10;
 const WEB_DIR = join(import.meta.dir, '../../web/dist');
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -50,8 +51,9 @@ async function api(u: URL): Promise<Response> {
       const n = (k: string) => Number(u.searchParams.get(k) ?? NaN);
       const [map, x, y, level] = [n('map'), n('x'), n('y'), n('level')];
       if (![map, x, y].every(Number.isFinite)) return fail(400, 'faltan map, x, y');
-      // La mejor zona para este nivel: lo que se farmeó con hasta 10 niveles menos.
-      return json(await live(map, x, y, { days: r.days, minLevel: Number.isFinite(level) ? Math.max(0, level - 10) : r.minLevel }));
+      // La mejor zona para este nivel: lo que se farmeó a ±10 niveles (una zona de nivel 300 no le sirve a uno de 60).
+      const band = Number.isFinite(level) ? { minLevel: Math.max(0, level - LEVEL_BAND), maxLevel: level + LEVEL_BAND } : { minLevel: r.minLevel };
+      return json(await live(map, x, y, { days: r.days, ...band }));
     }
   }
   return fail(404, 'no existe');
