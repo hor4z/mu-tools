@@ -3,15 +3,16 @@
 Extensión de Chrome (MV3) para MU Slow (`https://mu.mormon.garden`). Corre 100% dentro de la página del juego: sin servidor, sin proceso aparte,
 sin base de datos. Auto attack con el skill elegido, levantar Zen/joyas/excelentes, pociones por atajo y reparto de puntos.
 
-## Comandos
+## Comandos (desde la raíz; es un monorepo de workspaces de Bun)
 
 - `bun install`
-- `bun run build`: compila a `dist/` (la carpeta que se carga en `chrome://extensions` → "Cargar descomprimida").
-- `bun run tsc`: tiene que quedar limpio antes de dar algo por terminado.
-- `bun run brain`: compila solo el cerebro a `dist/brain.js`, para `window.__mu.swapBrain(código)` con la página abierta.
+- `bun run build`: compila la extensión a `packages/extension/dist/` (la carpeta que se carga en `chrome://extensions` → "Cargar descomprimida").
+- `bun run tsc`: todos los paquetes; tiene que quedar limpio antes de dar algo por terminado.
+- `bun run brain`: compila solo el cerebro a `packages/extension/dist/brain.js`, para `window.__mu.swapBrain(código)` con la página abierta.
 
 ## Dónde está cada cosa
 
+- `packages/extension/`: la extensión. Las rutas de abajo son relativas a esa carpeta.
 - `src/inject.ts`: entrada, conecta las piezas y carga antes que el cliente.
 - `src/assistant.ts`: lee el mundo con el núcleo del bot y corre el cerebro; cifrado compartido con la página.
 - `src/page/`: socket del juego, mundo del cliente (`castRequest`, `dying`), barra de skills, stats, teclas.

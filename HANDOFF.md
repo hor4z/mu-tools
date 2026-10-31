@@ -5,7 +5,7 @@ Estado para retomar. Lo estable (comandos, estructura, reglas) está en [AGENTS.
 ## Dónde quedó
 
 - Repo: `hor4z/mu-tools` (público), clon en `~/self/mu-tools`. Versión **0.4.2** (release `v0.4.2`).
-- El usuario carga la extensión desde `~/self/mu-tools/dist`. Se juega con **Capitan** en `https://mu.mormon.garden` (Slow).
+- El usuario carga la extensión desde `~/self/mu-tools/packages/extension/dist` (antes `dist/` en la raíz: desde el monorepo hay que volver a cargarla). Se juega con **Capitan** en `https://mu.mormon.garden` (Slow).
 - Viene de `hor4z/mutbot` (`packages/extension`). En mutbot la copia vieja sigue en la rama `asistente-gira-al-objetivo`, **sin commitear**:
   falta decidir si se borra de mutbot (sacar `packages/extension` y `brain/assist.ts`, dejar una línea que apunte a mu-tools).
 
@@ -58,7 +58,7 @@ Código del cliente: `~/self/mulo` es una copia vieja (16/10); lo que corre en v
 
 ## Pendiente
 
-1. Que el usuario cargue `dist/` de mu-tools y probar todo lo de "sin probar".
+1. Que el usuario cargue `packages/extension/dist/` de mu-tools y probar todo lo de "sin probar".
 2. **Mantener Swell Life**: relanzarlo cuando se termina sin que el usuario cambie de skill. Antes, ver en vivo qué paquete manda el server al
    activarse y terminarse el buff (el núcleo no sigue buffs).
 3. Golpe común sin skill: sale como paquete del asistente (sin animación). `world.attackTarget` lo haría nativo, pero queda pegado con el
@@ -72,7 +72,7 @@ Código del cliente: `~/self/mulo` es una copia vieja (16/10); lo que corre en v
 - La pestaña del juego tiene que estar en el grupo de pestañas de Claude in Chrome (si se recarga o se mueve, sale del grupo: pedirle al usuario
   que la vuelva a arrastrar). No abrir el juego en otra pestaña: no se loguea por el usuario y serían dos sesiones.
 - Consola: `__mu.status()`, `__mu.state.{world,bot,assist}`, `__muDebug.world()` (mundo del cliente), `__muDebug.opts.native = false` (volver a paquetes).
-- Cambios del cerebro sin recargar: `bun run brain` y `__mu.swapBrain(<dist/brain.js como string>)`. Cambios en `src/` fuera del cerebro piden
+- Cambios del cerebro sin recargar: `bun run brain` y `__mu.swapBrain(<dist/brain.js como string>)`. Cambios en `packages/extension/src/` fuera del cerebro piden
   ↻ en la extensión y recargar la pestaña (login del usuario).
 - Medir en vez de mirar capturas: bajadas de maná para la cadencia, y envolver `assist.cast` / `assist.face` para contar nativo vs respaldo.
 

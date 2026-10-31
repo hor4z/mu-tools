@@ -16,7 +16,7 @@ bun install
 bun run build
 ```
 
-En `chrome://extensions`, prendé el modo desarrollador, "Cargar descomprimida" y elegí la carpeta `dist/`. Después de cada `build`: ↻ en la
+En `chrome://extensions`, prendé el modo desarrollador, "Cargar descomprimida" y elegí la carpeta `packages/extension/dist/`. Después de cada `build`: ↻ en la
 extensión y recargar la pestaña del juego.
 
 La versión está al pie del panel; tocándola se ven las novedades.
